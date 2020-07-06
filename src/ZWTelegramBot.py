@@ -5,7 +5,6 @@ import time
 
 import telepot
 # from scheduler import SchedulerHandler
-# import ASVZ_Crawler
 
 
 class ZWTelegramBot(object):
@@ -22,6 +21,7 @@ class ZWTelegramBot(object):
         # Get fields from message
         chat_id = msg['chat']['id']
         command = msg['text']
+        # convert command to lowerCase
         command = command.lower()
 
         logging.info(
