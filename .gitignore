@@ -115,7 +115,7 @@ venv.bak/
 
 # Secrets
 KEYS.py
-api.ini
+src/api.ini
 
 
 # Spyder project settings
