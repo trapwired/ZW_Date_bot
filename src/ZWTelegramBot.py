@@ -32,8 +32,6 @@ class ZWTelegramBot(object):
             self.bot.sendMessage(chat_id, str("Hi back!"))
         elif command == '/start':
             self.bot.sendMessage(chat_id, 'Hi there! \n I am the Züri West Manager')
-        elif command == 'Carla':
-            self.bot.sendMessage(chat_id, 'I love you')
         else:
             self.bot.sendMessage(chat_id, command)
 
