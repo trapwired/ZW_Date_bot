@@ -116,6 +116,8 @@ venv.bak/
 # Secrets
 KEYS.py
 src/api.ini
+src/db_config.ini
+SQL_Queries.txt
 
 
 # Spyder project settings
