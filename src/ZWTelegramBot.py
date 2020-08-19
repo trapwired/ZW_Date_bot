@@ -4,6 +4,7 @@ import datetime
 import time
 import os
 from DatabaseHandler import DatabaseHandler
+from Enum import Enum
 
 import telepot
 from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -17,46 +18,77 @@ class ZWTelegramBot(object):
         self.api_config = api_config
 
         self.bot = telepot.Bot(self.api_config["API"]["key"])
-
         self.database_handler = DatabaseHandler(db_config)
+        self.states = Enum(['START', 'OVERVIEW', 'SELECT'])
+        self.state_map = dict()
 
         # self.scheduler_handler = SchedulerHandler(self.bot)
 
     def handle(self, msg: dict):
         content_type, chat_type, chat_id = telepot.glance(msg)
-        # print(msg)
-        if content_type == 'text':
-            # Get fields from message
-            command = msg['text']
-            # convert command to lowerCase
-            command = command.lower()
-            
-            logging.info(f"BOT - Got command: {command} from {chat_id}")
+
+        # private chat reply
+        if chat_type == 'private':
+            if content_type == 'text':
+                # Get fields from message
+                command = msg['text']
+                # convert command to lowerCase
+                command = command.lower()
+                
+                logging.info(f"BOT - Got command: {command} from {chat_id}")
 
 
-            # Comparing the incoming message to send a reply according to it
-            if command == '/hi':
-                self.bot.sendMessage(chat_id, str("Hi back!"))
-            elif command == '/start':
-                first_name = msg['from']['first_name']
-                last_name = msg['from']['last_name']
-                # add player to Database if not already added
-                if not self.database_handler.player_present(chat_id):
-                    self.database_handler.insert_new_player(first_name, last_name, chat_id)
-                k = ReplyKeyboardMarkup(keyboard=[['/start', '/help', '/stats'], ['/games', '/finish']], resize_keyboard=True)
-                self.bot.sendMessage(chat_id, 'Hi there! \n I am the Züri West Manager \n These are my functions', reply_markup=k)
-            elif command == '/key':
-                k = ReplyKeyboardMarkup(keyboard=[['Yes', 'No', 'Maybe'], ['previous Games']], one_time_keyboard=True, resize_keyboard=True)
-                msg = self.bot.sendMessage(chat_id, 'Handball Game, 17.08.2020 - Saalsporthalle - TV Wil', reply_markup=k)
-                # msg_ident = telepot.message_identifier(msg)
-                # self.bot.editMessageReplyMarkup(msg_ident, reply_markup=None)
-                # maybe add summary at end 
-            elif command == '/del_k': 
-                self.bot.sendMessage(chat_id, 'Deleting keyboard', reply_markup=ReplyKeyboardRemove())
+                # Comparing the incoming message to send a reply according to it
+                if command == '/hi':
+                    self.bot.sendMessage(chat_id, str("Hi back!"))
+
+                elif command == '/start':
+                    # first time (only time) of issued start command
+                    if chat_id not in self.state_map:
+                        first_name = msg['from']['first_name']
+                        last_name = msg['from']['last_name']
+
+                        # add chat_id to state_map
+                        self.state_map[chat_id] = self.states.START
+
+                        # add player to Database if not already added
+                        if not self.database_handler.player_present(chat_id):
+                            self.database_handler.insert_new_player(first_name, last_name, chat_id)
+
+                        # TODO delete /start
+                        start_keyboard = ReplyKeyboardMarkup(keyboard=[['/start', '/help', '/stats'], ['/edit_games']], resize_keyboard=True, one_time_keyboard=True)
+
+                        self.bot.sendMessage(chat_id, 'Hi there! \n I am the Züri West Manager \n These are my functions \n When your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games , reply_markup=keyboard', reply_markup=start_keyboard)
+
+                elif command == '/key':
+                    k = ReplyKeyboardMarkup(keyboard=[['Yes', 'No', 'Maybe'], ['previous Games']], one_time_keyboard=True, resize_keyboard=True)
+                    msg = self.bot.sendMessage(chat_id, 'Handball Game, 17.08.2020 - Saalsporthalle - TV Wil', reply_markup=k)
+                    # msg_ident = telepot.message_identifier(msg)
+                    # self.bot.editMessageReplyMarkup(msg_ident, reply_markup=None)
+                    # maybe add summary at end 
+
+                elif command == '/del_k': 
+                    self.bot.sendMessage(chat_id, 'Deleting keyboard', reply_markup=ReplyKeyboardRemove())
+
+                else:
+                    self.bot.sendMessage(chat_id, command)
             else:
-                self.bot.sendMessage(chat_id, command)
-        else:
-            logging.info(f"BOT - Got {content_type} from {chat_id}")
+                logging.info(f"BOT - Got {content_type} from {chat_id}")
+
+        # group chat reply
+        elif chat_type == 'group':
+            if content_type == 'text':
+                command = msg['text']
+                logging.info(f"BOT - Group-Message - Got {command} from {chat_id}")
+                # it concerns the bot - so answer
+                if command.startswith('@Zuri_West_Manager_Bot'):
+                    command = command[23:]
+                    if command == '/stats' or command == 'stats':
+                        # TODO send stats
+                        self.bot.sendMessage(chat_id, 'The stats for our next game are: ')
+
+            else:
+                logging.info(f"BOT - Got {content_type} from {chat_id}")
 
 
     def start(self):
