@@ -118,6 +118,8 @@ KEYS.py
 src/api.ini
 src/db_config.ini
 SQL_Queries.txt
+*.log
+logs/
 
 
 # Spyder project settings
