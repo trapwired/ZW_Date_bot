@@ -19,8 +19,8 @@ class ZWTelegramBot(object):
 
         self.bot = telepot.Bot(self.api_config["API"]["key"])
         self.database_handler = DatabaseHandler(db_config)
-        self.states = Enum(['START', 'OVERVIEW', 'SELECT'])
-        self.state_map = dict()
+        # self.states = Enum(['START', 'OVERVIEW', 'SELECT'])
+        self.state_map = dict() # -1: Start, Overview, any other positive number: represents game is beeing edited
 
         # self.scheduler_handler = SchedulerHandler(self.bot)
 
@@ -39,8 +39,20 @@ class ZWTelegramBot(object):
 
 
                 # Comparing the incoming message to send a reply according to it
-                if command == '/hi':
-                    self.bot.sendMessage(chat_id, str("Hi back!"))
+                if command == '/del_k': 
+                    reply_text = 'Deleting keyboard'
+                    reply_keyboard = self.get_keyboard('remove')
+                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                elif command == '/help':
+                    reply_text = self.get_help()
+                    reply_keyboard = self.get_keyboard('default')
+                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                elif command == '/hi':
+                    first_name = msg['from']['first_name']
+                    reply_text = f"Hi {first_name}"
+                    self.bot.sendMessage(chat_id, reply_text)
 
                 elif command == '/start':
                     # first time (only time) of issued start command
@@ -49,28 +61,23 @@ class ZWTelegramBot(object):
                         last_name = msg['from']['last_name']
 
                         # add chat_id to state_map
-                        self.state_map[chat_id] = self.states.START
+                        self.state_map[chat_id] = -1
 
                         # add player to Database if not already added
                         if not self.database_handler.player_present(chat_id):
                             self.database_handler.insert_new_player(first_name, last_name, chat_id)
 
-                        # TODO delete /start
-                        start_keyboard = ReplyKeyboardMarkup(keyboard=[['/start', '/help', '/stats'], ['/edit_games']], resize_keyboard=True, one_time_keyboard=True)
+                    # send reply
+                    reply_text = 'Hi there! \nI am the Züri West Manager \nThese are my functions \nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games'
+                    reply_keyboard = self.get_keyboard('default')
+                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-                        self.bot.sendMessage(chat_id, 'Hi there! \n I am the Züri West Manager \n These are my functions \n When your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games , reply_markup=keyboard', reply_markup=start_keyboard)
-
-                elif command == '/key':
-                    k = ReplyKeyboardMarkup(keyboard=[['Yes', 'No', 'Maybe'], ['previous Games']], one_time_keyboard=True, resize_keyboard=True)
-                    msg = self.bot.sendMessage(chat_id, 'Handball Game, 17.08.2020 - Saalsporthalle - TV Wil', reply_markup=k)
-                    # msg_ident = telepot.message_identifier(msg)
-                    # self.bot.editMessageReplyMarkup(msg_ident, reply_markup=None)
-                    # maybe add summary at end 
-
-                elif command == '/del_k': 
-                    self.bot.sendMessage(chat_id, 'Deleting keyboard', reply_markup=ReplyKeyboardRemove())
+                elif command == '/stats':
+                    reply_text = 'The stats for our next game are:\n' + self.get_stats_next_game()
+                    self.bot.sendMessage(chat_id, reply_text)
 
                 else:
+                    # TODO deal with any other message: maybe send /help?
                     self.bot.sendMessage(chat_id, command)
             else:
                 logging.info(f"BOT - Got {content_type} from {chat_id}")
@@ -84,8 +91,7 @@ class ZWTelegramBot(object):
                 if command.startswith('@Zuri_West_Manager_Bot'):
                     command = command[23:]
                     if command == '/stats' or command == 'stats':
-                        # TODO send stats
-                        self.bot.sendMessage(chat_id, 'The stats for our next game are: ')
+                        self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_stats_next_game())
 
             else:
                 logging.info(f"BOT - Got {content_type} from {chat_id}")
@@ -94,6 +100,28 @@ class ZWTelegramBot(object):
     def start(self):
         self.bot.message_loop(self.handle)
         logging.info("BOT - Bot started")
+
+
+    def get_stats_next_game(self):
+        # TODO pretty print stats for the next game
+        return 'TODO'
+
+    
+    def get_help(self):
+        # TODO pretty print all possible commands and their function
+        return 'TODO'
+
+
+    def get_keyboard(self, kind: str):
+        keyboard = None
+        if kind == 'select':
+            keyboard = ReplyKeyboardMarkup(keyboard=[['Yes', 'No', 'Unsure'], ['Overview', 'continue later']], resize_keyboard=True, one_time_keyboard=True)
+        elif kind == 'default':
+            # TODO remove /start
+            keyboard = ReplyKeyboardMarkup(keyboard=[['/start', '/help', '/stats'], ['/edit_games']], resize_keyboard=True)
+        elif kind == 'remove':
+            keyboard = ReplyKeyboardRemove()
+        return keyboard
 
 
 def main():

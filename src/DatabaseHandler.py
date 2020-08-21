@@ -37,9 +37,32 @@ class DatabaseHandler(object):
             )
             self.connection.commit()
             logging.info(f"DB  - Added new Player({firstname} {lastname}) to database")
-            return True
-        except:
+        except :
             self.connection.rollback()
+            logging.error(f"DB  - Tried to add new Player({firstname} {lastname}) to database - failed - rollback")
+            return False
+        self.cursor.execute(
+            "SELECT ID FROM Players WHERE chat_id =?;",
+            (chat_id,)
+        ) 
+        new_player_id = 0
+        for ID in self.cursor:
+            # there really can be only one
+            new_player_id = ID[0]
+        new_column_name = f"p{new_player_id}"
+        # TODO what if only the second execute statement fails?
+
+        # now add respective column to Games Table, default value = 0 (unsure)
+        try:
+            self.cursor.execute(
+                f"ALTER TABLE Games ADD COLUMN {new_column_name} INT DEFAULT 0;"
+            )
+            self.connection.commit()
+            logging.info(f"DB  - Added new Player-Column({new_column_name}) to database")
+            return True
+        except self.connection.Error as err:
+            self.connection.rollback()
+            logging.error(f"DB  - Tried to add new Player-Column in Games({new_column_name}) to database - failed - rollback \n\tERROR{err}")
             return False
 
 
@@ -60,6 +83,7 @@ def main():
     config.read(os.path.join(path, 'db_config.ini'), encoding='utf8')
 
     db_handler = DatabaseHandler(config)
+    db_handler.insert_new_player('test1', 'lastname_test', 95)
 
 
     """
