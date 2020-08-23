@@ -27,3 +27,11 @@ def translate_status_from_str(status: str):
     return -1
 
 
+def pretty_print_game(DateTime: datetime, place: str, status: int):
+    pretty_status = f"({translate_status_from_int(status)})"
+    # pretty_status =  (pretty_status + 8 * ' ')[:8]
+    pretty_dateTime = make_datetime_pretty(DateTime)
+    # pretty_place = (place + ' ' * 21)[:21]
+    return f"{pretty_dateTime} | {place} | {pretty_status}"
+    
+

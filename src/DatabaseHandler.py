@@ -77,11 +77,9 @@ class DatabaseHandler(object):
             logging.error(f"DB - Tried to get list of games for {player_column}\n\t{err}")
         # pretty print columns, add to buttons
         for (ID, DateTime, Place, player_col) in self.cursor:
-            pretty_datetime = util.make_datetime_pretty(DateTime)
-            pretty_status = util.translate_status_from_int(player_col)
-            button_list.append([f"{pretty_datetime} at {Place} ({pretty_status})"])
+            button_list.append([util.pretty_print_game(DateTime, Place, player_col)])
             if ID not in self.id_to_game: 
-                self.id_to_game[ID] = f"{pretty_datetime}"
+                self.id_to_game[ID] = f"{util.make_datetime_pretty(DateTime)}"
         button_list.append(['continue later'])
         return button_list
 
