@@ -83,6 +83,75 @@ class DatabaseHandler(object):
         button_list.append(['continue later'])
         return button_list
 
+    
+    def get_stats_next_game(self):
+        # get all players (chat_id, firstname, lastname)
+        try:
+            self.cursor.execute(
+                "SELECT ID, LastName, FirstName FROM Players"
+            )
+        except self.connection.Error as err:
+            logging.error(f"DB - Tried to get List of all Players\n{err}")
+            return
+        
+        player_dict = dict()
+        player_columns = ''
+        for (ID, LastName, FirstName) in self.cursor:
+            player_dict[ID] = f"{FirstName} {LastName[:1]}\\."
+            player_columns += f"p{ID},"
+        
+       
+        # delete last comma
+        player_columns = player_columns[:len(player_columns)-1]
+        # now get next game for all players
+        try:
+            self.cursor.execute(
+                f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC LIMIT 1;"
+            )
+        except self.connection.Error as err:
+            logging.error(f"DB - Tried to get next Game with status of all players\n{err}")
+            return
+        return_row = self.cursor.fetchone()
+        result = ''
+        # split by comma to get list in same order as result from sql query
+        player_columns = player_columns.split(',')
+        # create 3 lists for Yes(1), No(2), Unsure(0)
+        yes_list = []
+        no_list = []
+        unsure_list = []
+
+        result = f"{util.make_datetime_pretty_md(return_row[0])} \\| {return_row[1]} \\| {return_row[2]}\n"
+        count = 3
+        for player in player_columns:
+            player_chat_id = int(player[1:len(player)])
+            status = return_row[count]
+            if status == 0:
+                unsure_list.append(player_dict[player_chat_id])
+            elif status == 1:
+                yes_list.append(player_dict[player_chat_id])
+            elif status == 2:
+                no_list.append(player_dict[player_chat_id])
+            count += 1
+
+        player_count = len(yes_list) + len(no_list) + len(unsure_list)
+        # assemble result
+        result += f"\n  *Team / Yes \\({len(yes_list)}/{player_count}\\)*:\n"
+        if len(yes_list) > 0:
+            for yes_player in yes_list:
+                result += f"        {yes_player}\n"
+        else:
+            result += "        No one yet\\!\n"
+        if len(no_list) > 0:
+            result += f"\n  *No \\({len(no_list)}/{player_count}\\)*:\n"
+            for no_player in no_list:
+                result += f"        {no_player}\n"
+        if len(unsure_list) > 0:
+            result += f"\n  *Still Unsure \\({len(unsure_list)}/{player_count}\\)*:\n"
+            for unsure_player in unsure_list:
+                result += f"        {unsure_player}\n"
+
+        return result
+
 
     def insert_games(self):
         # Backup of all Games in case of DB reset
@@ -167,7 +236,9 @@ def main():
     config = configparser.RawConfigParser()
     config.read(os.path.join(path, 'db_config.ini'), encoding='utf8')
     db_handler = DatabaseHandler(config)
-    print(db_handler.init_state_map())
+    #db_handler.insert_new_player(1, 'flo', 'name')
+    #db_handler.insert_new_player(2, 'ralph', 'lauren')
+    db_handler.get_stats_next_game()
     db_handler.connection.close()
 
 if __name__ == "__main__":

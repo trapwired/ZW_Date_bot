@@ -47,7 +47,7 @@ class ZWTelegramBot(object):
                             reply_text = self.get_reply_text('edit_games', first_name)
                             reply_keyboard = self.get_keyboard('overview', chat_id)
                             self.update_state_map(chat_id, 0)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard, parse_mode= 'MarkdownV2')
                      
                         elif command == '/help':
                             self.update_state_map(chat_id,-1)
@@ -66,7 +66,7 @@ class ZWTelegramBot(object):
 
                         elif command == '/stats':
                             reply_text = self.get_reply_text('stats', first_name)
-                            self.bot.sendMessage(chat_id, reply_text)
+                            self.bot.sendMessage(chat_id, reply_text, parse_mode= 'MarkdownV2')
 
 
                     elif self.state_map[chat_id] == 0:
@@ -141,7 +141,7 @@ class ZWTelegramBot(object):
                 if command.startswith('@Zuri_West_Manager_Bot'):
                     command = command[23:]
                     if command == '/stats' or command == 'stats':
-                        self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_stats_next_game())
+                        self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_reply_text('stats', 'Group'), parse_mode= 'MarkdownV2')
 
             else:
                 logging.info(f"BOT - Got {content_type} from {chat_id}")
@@ -151,11 +151,6 @@ class ZWTelegramBot(object):
         self.bot.message_loop(self.handle)
         logging.info("BOT - Bot started")
 
-
-    def get_stats_next_game(self):
-        # TODO pretty print stats for the next game
-        return 'TODO'
-
     
     def get_reply_text(self, kind: str, first_name: str):
         reply = ''
@@ -163,7 +158,7 @@ class ZWTelegramBot(object):
             reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n"
 
         elif kind == 'edit_games':
-            reply = "Click on the game to change you attendance - in brackets you see your current status"
+            reply = "Click on the game to change you attendance \\- in brackets you see your current status \\ \n*TIPP: the list ist scrollable*"
 
         elif kind == 'hi':
             reply = f"Hi {first_name}"
@@ -172,7 +167,7 @@ class ZWTelegramBot(object):
             reply = f"Hi {first_name}! \nI am the Züri West Manager \nBelow you see the available commands \nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games"
 
         elif kind == 'stats':
-            reply = 'The stats for our next game are:\n' + self.get_stats_next_game()
+            reply = self.database_handler.get_stats_next_game()
 
         elif kind == 'continue later':
             reply = f"See ya, {first_name}"
@@ -186,8 +181,7 @@ class ZWTelegramBot(object):
     def get_keyboard(self, kind: str, chat_id: int):
         keyboard = None
         if kind == 'default':
-            # TODO remove /start
-            keyboard = ReplyKeyboardMarkup(keyboard=[['/start', '/help', '/stats'], ['/edit_games']], resize_keyboard=True)
+            keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games']], resize_keyboard=True)
         elif kind == 'overview':
             buttons = self.database_handler.get_games_list_with_status(chat_id)
             keyboard = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=True)
