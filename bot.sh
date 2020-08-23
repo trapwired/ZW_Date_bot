@@ -1,11 +1,26 @@
 #!/bin/bash
 
+stop_bot () {
+	ps -ef | grep "src/ZWTelegramBot.py" | grep -v grep | awk '{print $2}' | xargs -r kill
+}
+
+start_bot () {
+	mv /home/pi/Desktop/ZW_Date_bot/ZW_bot.log /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_$(date +%F-%H:%M).log
+	nohup /usr/bin/python3 /home/pi/Desktop/ZW_Date_bot/src/ZWTelegramBot.py > /home/pi/Desktop/ZW_Date_bot/ZW_bot.log 2 >&1 &
+}
+
 case "$1"
 in
+restart)
+	stop_bot
+	start_bot
+	;;
 stop) 
-	ps -ef | grep "src/ZWTelegramBot.py" | grep -v grep | awk '{print $2}' | xargs -r kill
+	stop_bot
 	;;
 start) 
-	mv /home/pi/Desktop/ZW_Date_bot/ZW_bot.log /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_$(date +%F-%H:%M).log
-	nohup /usr/bin/python3 /home/pi/Desktop/ZW_Date_bot/src/ZWTelegramBot.py > /home/pi/Desktop/ZW_Date_bot/ZW_bot.log 2 >&1 &;;
+	start_bot
+	;;
 esac
+
+

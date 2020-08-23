@@ -1,4 +1,8 @@
 from datetime import datetime
+import logging
+
+
+ATTENDANCE = ['UNSURE', 'YES', 'NO']
 
 
 def make_datetime_pretty(DateTime: datetime):
@@ -8,6 +12,18 @@ def make_datetime_pretty(DateTime: datetime):
 
 
 
-def translate_status(status: int):
-    attendance = ['UNSURE', 'YES', 'NO']
-    return attendance[status]
+def translate_status_from_int(status: int):
+    return ATTENDANCE[status]
+
+
+def translate_status_from_str(status: str):
+    status = status.upper()
+    index = 0
+    for stat in ATTENDANCE:
+        if stat == status:
+            return index
+        index += 1
+    logging.warning(f"got wrong status: {status}")
+    return -1
+
+

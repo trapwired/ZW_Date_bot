@@ -4,6 +4,7 @@ import datetime
 import time
 import os
 from DatabaseHandler import DatabaseHandler
+import utility as util
 from Enum import Enum
 
 import telepot
@@ -20,16 +21,19 @@ class ZWTelegramBot(object):
         self.bot = telepot.Bot(self.api_config["API"]["key"])
         self.database_handler = DatabaseHandler(db_config)
         # self.states = Enum(['START', 'OVERVIEW', 'SELECT'])
-        self.state_map = dict() # -1: Start, 0 = Overview, any other positive number: represents game is beeing edited (from chat_id to int)
+        self.state_map = self.database_handler.init_state_map() # -1: Start, 0 = Overview, any other positive number: represents game is beeing edited (from chat_id to int)
         # self.scheduler_handler = SchedulerHandler(self.bot)
 
     def handle(self, msg: dict):
         content_type, chat_type, chat_id = telepot.glance(msg)
-        handled = False
+
         # private chat reply
         if chat_type == 'private':
+
+            first_name = msg['from']['first_name']
+
             if content_type == 'text':
-                # Get fields from message
+
                 command = msg['text']
                 # convert command to lowerCase
                 command = command.lower()
@@ -37,95 +41,88 @@ class ZWTelegramBot(object):
                 logging.info(f"BOT - Got command: {command} from {chat_id}")
                 
                 if chat_id in self.state_map:
-                    if self.state_map[chat_id] == 0:
-                        # chat_id choose a game to edit attendance
-                        # save ID of Game in self.state_map
-                        current_game_id = self.database_handler.get_game_id(command[:10])
-                        self.state_map[chat_id] = current_game_id
-                        # assemble reply with select-keyboard
-                        reply_text = 'Will you be there (YES), be absent (NO) or are not sure yet (UNSURE)?'
-                        reply_keyboard = self.get_keyboard('select', chat_id)
-                        self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                        handled = True
-                    elif self.state_map[chat_id] > 0:
-                        # chat_id choose YES/NO/UNSURE for the game with ID self.state_map[chat_id]
-                        if command == 'yes':
-                            # TODO edit game at ID to 1
-                            logging.info('BOT - got a YES')
-                        elif command == 'no':
-                            # TODO edit game at ID to 2
-                            logging.info('BOT - got a NO')
-                        elif command == 'unsure':
-                            # TODO edit game at ID to 0
-                            logging.info('BOT - got a UNSURE')
-                        elif command == 'overview':
-                            self.state_map[chat_id] = -1
-                            msg['text'] = '/edit_games'
-                            self.handle(msg)
-                            handled = True
-                        elif command == 'continue later':
-                            self.state_map[chat_id] = -1
-                            reply_text = 'See ya'
+
+                    if self.state_map[chat_id] < 0:
+                        if command == '/edit_games':
+                            reply_text = self.get_reply_text('edit_games', first_name)
+                            reply_keyboard = self.get_keyboard('overview', chat_id)
+                            self.update_state_map(chat_id, 0)
+                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                     
+                        elif command == '/help':
+                            self.update_state_map(chat_id,-1)
+                            reply_text = self.get_reply_text('help', first_name)
                             reply_keyboard = self.get_keyboard('default', chat_id)
                             self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                            handled = True
+
+                        elif command == '/hi' or command == 'hi':
+                            reply_text = self.get_reply_text('hi', first_name)
+                            self.bot.sendMessage(chat_id, reply_text)
+
+                        elif command == '/start':
+                            reply_text = self.get_reply_text('start', first_name)
+                            reply_keyboard = self.get_keyboard('default', chat_id)
+                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                        elif command == '/stats':
+                            reply_text = self.get_reply_text('stats', first_name)
+                            self.bot.sendMessage(chat_id, reply_text)
+
+
+                    elif self.state_map[chat_id] == 0:
+                        # chat_id choose a game to edit attendance
+                        current_game_id = self.database_handler.get_game_id(command[:10])
+                        if command == 'continue later':
+                            self.update_state_map(chat_id,-1)
+                            reply_text = self.get_reply_text('continue later', first_name)
+                            reply_keyboard = self.get_keyboard('default', chat_id)
+                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                         
-
-                        # adjust game id at self.state_dict[chat_id]
-
-                        # TODO send info of next game - keyboard stays the same
-                        if not handled:
-                            reply_text = 'Next Game:\ BLIBLBABAASDFIASDFHADSFKLHADFSAKDSF\nWill you be there (YES), be absent (NO) or are not sure yet (UNSURE)?'
+                        elif current_game_id >= 0:
+                            self.update_state_map(chat_id,current_game_id)
+                            # assemble reply with select-keyboard
+                            reply_text = self.get_reply_text('selection', first_name)
                             reply_keyboard = self.get_keyboard('select', chat_id)
                             self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                    
+                        else:
+                            # deal with Game not found Error
+                            logging.warning(f"Game not found {command}")
 
-                # Comparing the incoming message to send a reply according to it
-                if command == '/del_k': 
-                    self.state_map[chat_id] = -1
-                    reply_text = 'Deleting keyboard'
-                    reply_keyboard = self.get_keyboard('remove', chat_id)
-                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                
-                elif command == '/edit_games':
-                    reply_text = 'Click on the game to change you attendance\nIn brackets you see your current status'
-                    reply_keyboard = self.get_keyboard('overview', chat_id)
-                    self.state_map[chat_id] = 0
-                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                     
+                    elif self.state_map[chat_id] > 0:
+                        # chat_id choose YES/NO/UNSURE for the game with ID self.state_map[chat_id]
+                        if command.upper() in util.ATTENDANCE:
+                            self.database_handler.edit_game_attendance(self.state_map[chat_id], command, chat_id)
+                            # now send overview again
+                            self.update_state_map(chat_id, -1)
+                            msg['text'] = '/edit_games'
+                            self.handle(msg)
+                        elif command == 'overview':
+                            self.update_state_map(chat_id,-1)
+                            msg['text'] = '/edit_games'
+                            self.handle(msg)
+                        elif command == 'continue later':
+                            self.update_state_map(chat_id,-1)
+                            reply_text = self.get_reply_text('continue later', first_name)
+                            reply_keyboard = self.get_keyboard('default', chat_id)
+                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-                elif command == '/help':
-                    self.state_map[chat_id] = -1
-                    reply_text = self.get_help()
-                    reply_keyboard = self.get_keyboard('default', chat_id)
-                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-                elif command == '/hi':
-                    first_name = msg['from']['first_name']
-                    reply_text = f"Hi {first_name}"
-                    self.bot.sendMessage(chat_id, reply_text)
+                else: # chat_id not in state_map
 
-                elif command == '/start':
-                    # first time (only time) of issued start command
-                    if chat_id not in self.state_map:
-                        first_name = msg['from']['first_name']
-                        last_name = msg['from']['last_name']
-
-                        # add chat_id to state_map
-                        self.state_map[chat_id] = -1
-
+                    if command == '/start':
                         # add player to Database if not already added
                         if not self.database_handler.player_present(chat_id):
-                            self.database_handler.insert_new_player(first_name, last_name, chat_id)
+                            first_name = msg['from']['first_name']
+                            last_name = msg['from']['last_name']
+                            self.database_handler.insert_new_player(chat_id, first_name, last_name)
+                        self.update_state_map(chat_id,-1)
 
                     # send reply
-                    reply_text = 'Hi there! \nI am the Züri West Manager \nThese are my functions \nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games'
+                    reply_text = self.get_reply_text('start', 'there')
                     reply_keyboard = self.get_keyboard('default', chat_id)
                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-                elif command == '/stats':
-                    reply_text = 'The stats for our next game are:\n' + self.get_stats_next_game()
-                    self.bot.sendMessage(chat_id, reply_text)
+                
 
                 # else:
                     # TODO deal with any other message: maybe send /help?
@@ -133,6 +130,7 @@ class ZWTelegramBot(object):
 
             else:
                 logging.info(f"BOT - Got {content_type} from {chat_id}")
+
 
         # group chat reply
         elif chat_type == 'group':
@@ -159,9 +157,30 @@ class ZWTelegramBot(object):
         return 'TODO'
 
     
-    def get_help(self):
-        # TODO pretty print all possible commands and their function
-        return 'TODO'
+    def get_reply_text(self, kind: str, first_name: str):
+        reply = ''
+        if kind == 'help':
+            reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n"
+
+        elif kind == 'edit_games':
+            reply = "Click on the game to change you attendance - in brackets you see your current status"
+
+        elif kind == 'hi':
+            reply = f"Hi {first_name}"
+
+        elif kind == 'start':
+            reply = f"Hi {first_name}! \nI am the Züri West Manager \nBelow you see the available commands \nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games"
+
+        elif kind == 'stats':
+            reply = 'The stats for our next game are:\n' + self.get_stats_next_game()
+
+        elif kind == 'continue later':
+            reply = f"See ya, {first_name}"
+
+        elif kind == 'selection':
+            reply = 'Will you be there (YES), be absent (NO) or are not sure yet (UNSURE)?'
+
+        return reply
 
 
     def get_keyboard(self, kind: str, chat_id: int):
@@ -178,6 +197,12 @@ class ZWTelegramBot(object):
             keyboard = ReplyKeyboardMarkup(keyboard=[['YES', 'NO', 'UNSURE'], ['Overview', 'continue later']], resize_keyboard=True, one_time_keyboard=True)
 
         return keyboard
+
+    def update_state_map(self, chat_id: int, new_state: int):
+        # update state in Players Table
+        self.database_handler.update_state(chat_id, new_state)
+        # update self.state_map
+        self.state_map[chat_id] = new_state
 
 
 def main():
