@@ -120,6 +120,7 @@ src/db_config.ini
 SQL_Queries.txt
 *.log
 logs/
+*out
 
 
 # Spyder project settings

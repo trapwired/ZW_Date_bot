@@ -22,7 +22,7 @@ class DatabaseHandler(object):
             )
         except mariadb.Error as e:
             logging.error(f"DB  - Error connecting to MariaDB Platform: {e}")
-            sys.exit(1)
+            raise mariadb.Error(e)
     
         # Get Cursor
         self.cursor = connection.cursor()
@@ -30,6 +30,12 @@ class DatabaseHandler(object):
         logging.info("DB  - DataBase Handler started")
         # TODO change what happens if for some reason player not in dict
         self.id_to_game = dict()
+        # set timeouts to 24hours to prevent "Server gone away - error"
+        try:
+            self.cursor.execute('SET SESSION wait_timeout=86400;')
+            self.cursor.execute('SET SESSION interactive_timeout=86400;')
+        except:
+            logging.warning(f"session parameters (timeouts) not set!")
 
 
     def insert_new_player(self, chat_id: int, firstname: str, lastname: str):
@@ -236,9 +242,9 @@ def main():
     config = configparser.RawConfigParser()
     config.read(os.path.join(path, 'db_config.ini'), encoding='utf8')
     db_handler = DatabaseHandler(config)
-    #db_handler.insert_new_player(1, 'flo', 'name')
+    db_handler.insert_new_player(3, 'Blibla', 'Blub')
     #db_handler.insert_new_player(2, 'ralph', 'lauren')
-    db_handler.get_stats_next_game()
+    # db_handler.get_stats_next_game()
     db_handler.connection.close()
 
 if __name__ == "__main__":

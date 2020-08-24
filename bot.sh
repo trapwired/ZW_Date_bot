@@ -6,7 +6,7 @@ stop_bot () {
 
 start_bot () {
 	mv /home/pi/Desktop/ZW_Date_bot/ZW_bot.log /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_$(date +%F-%H:%M).log
-	nohup /usr/bin/python3 /home/pi/Desktop/ZW_Date_bot/src/ZWTelegramBot.py > /home/pi/Desktop/ZW_Date_bot/ZW_bot.log 2 >&1 &
+	nohup /usr/bin/python3 /home/pi/Desktop/ZW_Date_bot/src/ZWTelegramBot.py &
 }
 
 case "$1"

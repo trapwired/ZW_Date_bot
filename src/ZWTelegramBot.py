@@ -3,13 +3,17 @@ import logging
 import datetime
 import time
 import os
-from DatabaseHandler import DatabaseHandler
-import utility as util
-from Enum import Enum
+import mariadb
+import sys
 
+from DatabaseHandler import DatabaseHandler
+from Scheduler import SchedulerHandler
+
+import utility as util
+
+# telepot imports
 import telepot
 from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-# from scheduler import SchedulerHandler
 
 
 class ZWTelegramBot(object):
@@ -17,12 +21,24 @@ class ZWTelegramBot(object):
     def __init__(self, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, db_config: configparser.RawConfigParser):
         self.config = config
         self.api_config = api_config
+        self.admin_chat_id = self.api_config["API"]["admin_chat_id"]
 
         self.bot = telepot.Bot(self.api_config["API"]["key"])
-        self.database_handler = DatabaseHandler(db_config)
+        count = 0
+        while count < 10:
+            try:
+                self.database_handler = DatabaseHandler(db_config)
+                count = 10
+            except mariadb.Error as err:
+                time.sleep(10)
+                count += 1
+                if count > 9:
+                    self.bot.sendMessage(self.admin_chat_id, f"ERROR: starting DB\n{err}")
+                    sys.exit(1)
+                    
         # self.states = Enum(['START', 'OVERVIEW', 'SELECT'])
         self.state_map = self.database_handler.init_state_map() # -1: Start, 0 = Overview, any other positive number: represents game is beeing edited (from chat_id to int)
-        # self.scheduler_handler = SchedulerHandler(self.bot)
+        self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler)
 
     def handle(self, msg: dict):
         content_type, chat_type, chat_id = telepot.glance(msg)
@@ -225,9 +241,11 @@ def main():
     bot.start()
 
     while True:
-        # bot.scheduler_handler.run_schedule()
+        bot.scheduler_handler.run_schedule()
         time.sleep(10)
 
 
 if __name__ == "__main__":
+    # wait 10s until the network interface is loaded
+    # time.sleep(10)
     main()
