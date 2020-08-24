@@ -247,5 +247,5 @@ def main():
 
 if __name__ == "__main__":
     # wait 10s until the network interface is loaded
-    # time.sleep(10)
+    time.sleep(10)
     main()
