@@ -32,6 +32,11 @@ def translate_status_from_str(status: str):
     return -1
 
 
+def status_is_valid(status: str):
+    status_upper = status.upper()
+    return status_upper in ATTENDANCE
+
+
 def pretty_print_game(DateTime: datetime, place: str, status: int):
     pretty_status = f"({translate_status_from_int(status)})"
     # pretty_status =  (pretty_status + 8 * ' ')[:8]

@@ -43,14 +43,17 @@ class DatabaseHandler(object):
         # Add new column to Games
         # Add new Player to State Map
         new_column_name = f"p{chat_id}"
+        logging.info(f"DB - trying to add")
         try:
             self.cursor.execute(
                 "INSERT INTO Players(ID, FirstName, LastName) VALUES(?,?,?);",
                 (chat_id, firstname, lastname)
             )
+            logging.info(f"DB - trying to add V1")
             self.cursor.execute(
                 f"ALTER TABLE Games ADD COLUMN {new_column_name} INT DEFAULT 0;"
             )
+            logging.info(f"DB - trying to add V2" )
             self.connection.commit()
             logging.info(f"DB  - Added new Player({firstname} {lastname}), added new col in Games, added to state map")
             return True
@@ -75,6 +78,7 @@ class DatabaseHandler(object):
         # get ordered list of games in the future
         player_column = f"p{chat_id}"
         button_list = []
+        button_list.append(['continue later'])
         try:
             self.cursor.execute(
                 f"SELECT ID, DateTime, Place, {player_column} FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
@@ -86,7 +90,6 @@ class DatabaseHandler(object):
             button_list.append([util.pretty_print_game(DateTime, Place, player_col)])
             if ID not in self.id_to_game: 
                 self.id_to_game[ID] = f"{util.make_datetime_pretty(DateTime)}"
-        button_list.append(['continue later'])
         return button_list
 
     
@@ -213,6 +216,7 @@ class DatabaseHandler(object):
 
     def init_state_map(self):
         # sql query to init the state_map in main bot class
+        # -1: Start, 0 = Overview, any other positive number: represents game is beeing edited (from chat_id to int)
         state_map = dict()
         try:
             self.cursor.execute(

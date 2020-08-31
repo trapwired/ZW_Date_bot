@@ -36,8 +36,7 @@ class ZWTelegramBot(object):
                     self.bot.sendMessage(self.admin_chat_id, f"ERROR: starting DB\n{err}")
                     sys.exit(1)
                     
-        # self.states = Enum(['START', 'OVERVIEW', 'SELECT'])
-        self.state_map = self.database_handler.init_state_map() # -1: Start, 0 = Overview, any other positive number: represents game is beeing edited (from chat_id to int)
+        self.state_map = self.database_handler.init_state_map() 
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler)
 
     def handle(self, msg: dict):
@@ -45,20 +44,24 @@ class ZWTelegramBot(object):
 
         # private chat reply
         if chat_type == 'private':
-
-            first_name = msg['from']['first_name']
+            # Access first and last name, check if exists to avoid dict-key error
+            last_name = ' No Name Given'
+            first_name =' No Name Given'
+            if 'last_name' in msg['from'].keys():
+                last_name = msg['from']['last_name'].capitalize()
+            if 'first_name' in msg['from'].keys():
+                first_name = msg['from']['first_name'].capitalize()
 
             if content_type == 'text':
 
-                command = msg['text']
-                # convert command to lowerCase
-                command = command.lower()
+                command = msg['text'].lower()
                 
                 logging.info(f"BOT - Got command: {command} from {chat_id}")
                 
                 if chat_id in self.state_map:
-
                     if self.state_map[chat_id] < 0:
+                    # State: default, all commands can be executed
+
                         if command == '/edit_games':
                             reply_text = self.get_reply_text('edit_games', first_name)
                             reply_keyboard = self.get_keyboard('overview', chat_id)
@@ -86,8 +89,10 @@ class ZWTelegramBot(object):
 
 
                     elif self.state_map[chat_id] == 0:
-                        # chat_id choose a game to edit attendance
-                        current_game_id = self.database_handler.get_game_id(command[:10])
+                    # State: User is on 'overview' of games, expected answer is either a game or 'continue later'
+
+                        game_date = command[:10]
+                        current_game_id = self.database_handler.get_game_id(game_date)
                         if command == 'continue later':
                             self.update_state_map(chat_id,-1)
                             reply_text = self.get_reply_text('continue later', first_name)
@@ -102,11 +107,11 @@ class ZWTelegramBot(object):
                             self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                         else:
                             # deal with Game not found Error
-                            logging.warning(f"Game not found {command}")
+                            logging.warning(f"Game not found, got {command}")
 
                     elif self.state_map[chat_id] > 0:
-                        # chat_id choose YES/NO/UNSURE for the game with ID self.state_map[chat_id]
-                        if command.upper() in util.ATTENDANCE:
+                        # State: Usure choosing YES/NO/UNSURE for the game with ID self.state_map[chat_id]
+                        if util.status_is_valid(command):
                             self.database_handler.edit_game_attendance(self.state_map[chat_id], command, chat_id)
                             # now send overview again
                             self.update_state_map(chat_id, -1)
@@ -124,19 +129,22 @@ class ZWTelegramBot(object):
 
 
                 else: # chat_id not in state_map
-
+                    
                     if command == '/start':
                         # add player to Database if not already added
                         if not self.database_handler.player_present(chat_id):
-                            first_name = msg['from']['first_name']
-                            last_name = msg['from']['last_name']
                             self.database_handler.insert_new_player(chat_id, first_name, last_name)
-                        self.update_state_map(chat_id,-1)
+                            self.update_state_map(chat_id,-1)
 
-                    # send reply
-                    reply_text = self.get_reply_text('start', 'there')
-                    reply_keyboard = self.get_keyboard('default', chat_id)
-                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            # send reply
+                            reply_text = self.get_reply_text('start', 'there')
+                            reply_keyboard = self.get_keyboard('default', chat_id)
+                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                    
+                    else:
+                        reply_text = self.get_reply_text('init', 'there')
+                        reply_keyboard = self.get_keyboard('init', chat_id)
+                        self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
                 
 
@@ -166,12 +174,16 @@ class ZWTelegramBot(object):
     def start(self):
         self.bot.message_loop(self.handle)
         logging.info("BOT - Bot started")
+        self.bot.sendMessage(self.admin_chat_id, 'Bot started succesfully')
 
     
     def get_reply_text(self, kind: str, first_name: str):
         reply = ''
         if kind == 'help':
             reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n"
+
+        elif kind == 'init':
+            reply = f"Please try again by clicking on /start"
 
         elif kind == 'edit_games':
             reply = "Click on the game to change you attendance \\- in brackets you see your current status \\ \n*TIPP: the list ist scrollable*"
@@ -186,7 +198,7 @@ class ZWTelegramBot(object):
             reply = self.database_handler.get_stats_next_game()
 
         elif kind == 'continue later':
-            reply = f"See ya, {first_name}"
+            reply = f"Cheerio, {first_name}"
 
         elif kind == 'selection':
             reply = 'Will you be there (YES), be absent (NO) or are not sure yet (UNSURE)?'
@@ -198,6 +210,8 @@ class ZWTelegramBot(object):
         keyboard = None
         if kind == 'default':
             keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games']], resize_keyboard=True)
+        elif kind == 'init':
+            keyboard = ReplyKeyboardMarkup(keyboard=[['/start']], resize_keyboard=True)
         elif kind == 'overview':
             buttons = self.database_handler.get_games_list_with_status(chat_id)
             keyboard = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=True)
@@ -239,6 +253,7 @@ def main():
     # Start botting
     bot = ZWTelegramBot(config, api_config, db_config)
     bot.start()
+    
 
     while True:
         bot.scheduler_handler.run_schedule()
