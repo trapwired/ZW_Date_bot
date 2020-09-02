@@ -5,8 +5,8 @@ stop_bot () {
 }
 
 start_bot () {
-	mv /home/pi/Desktop/ZW_Date_bot/ZW_bot.log /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_$(date +%F-%H:%M).log
-	nohup /usr/bin/python3 /home/pi/Desktop/ZW_Date_bot/src/ZWTelegramBot.py > /home/pi/Desktop/ZW_Date_bot/ZW_bot.log 2 >&1 &
+	mv /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_VERBOSE.log /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_VERBOSE_$(date +%F-%H:%M:%S).log
+	nohup /usr/bin/python3 /home/pi/Desktop/ZW_Date_bot/src/ZWTelegramBot.py > /home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_VERBOSE.log 2 >&1 &
 }
 
 case "$1"
