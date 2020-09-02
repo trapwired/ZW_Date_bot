@@ -3,6 +3,7 @@ import time
 import telepot
 import functools
 import logging
+from datetime import date
 
 from DatabaseHandler import DatabaseHandler
 
@@ -18,14 +19,8 @@ class SchedulerHandler(object):
 
         # since Pi restarts every 24hours, send error to admin if more than 24 hours up
         schedule.every(24).hours.do(self.send_reboot_failure)
-        # schedule.every(10).seconds.do(self.logging_shutdown)
 
-        # schedule.every(2).seconds.do(self.send_test)
-        self.logger.info('SH  - Scheduler Handler started')
-
-
-    def logging_shutdown(self):
-        self.logger.shutdown()
+        self.logger.info('Scheduler Handler started')
 
 
     def send_reboot_failure(self):
@@ -35,8 +30,28 @@ class SchedulerHandler(object):
     def load_schedules(self):
         # TODO load schedules from Database and add them to scheduler
         print('hi')
-    
+
+
+        # get all games that take place in next two weeks (minus the ones in less than 6 days)
+        # remind all unsure players to edit_attendance for this game (send msg at 7am)
+        seven_days_games_list = self.database_handler.get_games_in_between_x_y_days(5,14)
+        # for (game_id, game_name) in seven_days_games_list:
+        #    unsure_players_list = self.database_handler.get_unsure_players(game_id)
+        #    for player_id in unsure_players_list:
+                
+
+        # get all games that take place in 7 days
+        # remind all unsure players to edit attendance for this game (send msg at 7am)
+
+
+        # get all games taking place in 5 days
+        # remind all unsure players to edit attendance for this game (send msg at 7am)
+        # set new scheduler to send message in half the time -> cancel if filled out -> same again
+
+        # send stats_message to group chat at 20:00 (with wall of shame)
+
         
+    
     def run_schedule(self):
         # method looped in ZWTelegramBot to run scheduled jobs
         schedule.run_pending()

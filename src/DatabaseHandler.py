@@ -4,6 +4,7 @@ import configparser
 import os
 import logging 
 import utility as util
+import datetime
 
 
 class DatabaseHandler(object):
@@ -31,8 +32,8 @@ class DatabaseHandler(object):
         self.cursor = connection.cursor()
         self.connection = connection
         self.logger.info("DB  - DataBase Handler started")
-        # TODO change what happens if for some reason player not in dict
         self.id_to_game = dict()
+
         # set timeouts to 24hours to prevent "Server gone away - error"
         try:
             self.cursor.execute('SET SESSION wait_timeout=86400;')
@@ -41,32 +42,69 @@ class DatabaseHandler(object):
             self.logger.warning(f"session parameters (timeouts) not set!", exc_info=True)
             # deal with it
 
+        # build player dictionary for faster access of all player chat_id's
+        self.player_chat_id_dict = self.init_player_chat_id_dict()
+
+
+    def get_games_in_between_x_y_days(self, x: int, y: int):
+        # get all games that take place in the future between x and y days (including)
+        # Get current date
+        if x == y:
+            print('starting day is same as end day')
+        else: 
+            today = datetime.date.today()
+            in_x_days = (today + datetime.timedelta(days=x)).strftime("%Y-%m-%d")
+            in_y_days = (today + datetime.timedelta(days=y)).strftime("%Y-%m-%d")
+            startDate = f"{in_x_days} 00:00:00"
+            endDate = f"{in_y_days} 00:00:00"
+
+    
+    def init_player_chat_id_dict(self):
+        # get all player id's from the Database for faster access in queries involving chat_id's
+        try:
+            self.cursor.execute(
+                "SELECT ID, LastName, FirstName FROM Players"
+            )
+        except self.connection.Error as err:
+            self.logger.error(f"Tried to get List of all Players\n{err}")
+            raise
+        except:
+            self.logger.error("Error in init_player_chat_id_dict", exc_info=True)
+            return
+        
+        player_dict = dict()
+        for (ID, LastName, FirstName) in self.cursor:
+            player_dict[ID] = f"{FirstName} {LastName[:1]}\\."
+        return player_dict
+
 
     def insert_new_player(self, chat_id: int, firstname: str, lastname: str):
         # Add new Player to Players
         # Add new column to Games
         # Add new Player to State Map
+
         new_column_name = f"p{chat_id}"
-        self.logger.info(f"DB - trying to add")
+        self.logger.info(f"trying to add player{firstname} {lastname}")
         try:
             self.cursor.execute(
                 "INSERT INTO Players(ID, FirstName, LastName) VALUES(?,?,?);",
                 (chat_id, firstname, lastname)
             )
-            self.logger.info(f"DB - trying to add V1")
+            self.logger.info(f"Trying to add V1")
             self.cursor.execute(
                 f"ALTER TABLE Games ADD COLUMN {new_column_name} INT DEFAULT 0;"
             )
-            self.logger.info(f"DB - trying to add V2" )
+            self.logger.info(f"Trying to add V2" )
             self.connection.commit()
-            self.logger.info(f"DB  - Added new Player({firstname} {lastname}), added new col in Games, added to state map")
+            self.logger.info(f"Added new Player({firstname} {lastname}), added new col in Games, added to state map")
+            self.player_chat_id_dict[chat_id] = f"{firstname} {lastname[:1]}\\."
             return True
         except self.connection.Error as err:
             self.connection.rollback()
-            self.logger.error(f"DB  - Tried to add new Player({firstname} {lastname}) to database - failed - rollback\n\t{err}")
+            self.logger.error(f"Tried to add new Player({firstname} {lastname}) to database - failed - rollback\n\t{err}")
             raise
         except:
-            self.logger.error("DB - Error insert_new_player", exc_info=True)
+            self.logger.error("Rrror insert_new_player", exc_info=True)
 
 
     def player_present(self, chat_id: int):
@@ -77,10 +115,11 @@ class DatabaseHandler(object):
             self.cursor.fetchall()
             return self.cursor.rowcount > 0
         except self.connection.Error as err:
-            self.logger.warning(f"DB  - Player_present Database Error\{err}")
+            self.logger.warning(f"Player_present Database Error\{err}")
             raise
         except:
-            self.logger.error("DB - Error in player_present", exc_info=True)
+            self.logger.error("Error in player_present", exc_info=True)
+             # TODO change what happens if for some reason player not in dict
 
     
     def get_games_list_with_status(self, chat_id: int):
@@ -93,10 +132,10 @@ class DatabaseHandler(object):
                 f"SELECT ID, DateTime, Place, {player_column} FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
             )
         except self.connection.Error as err:
-            self.logger.error(f"DB - Tried to get list of games for {player_column}\n\t{err}")
+            self.logger.error(f"Tried to get list of games for {player_column}\n\t{err}")
             raise
         except:
-            self.logger.error("DB - Error in get_games_list_with_status", exc_info=True)
+            self.logger.error("Error in get_games_list_with_status", exc_info=True)
             return button_list
         # pretty print columns, add to buttons
         for (ID, DateTime, Place, player_col) in self.cursor:
@@ -108,36 +147,22 @@ class DatabaseHandler(object):
     
     def get_stats_next_game(self):
         # get all players (chat_id, firstname, lastname)
-        try:
-            self.cursor.execute(
-                "SELECT ID, LastName, FirstName FROM Players"
-            )
-        except self.connection.Error as err:
-            self.logger.error(f"DB - Tried to get List of all Players\n{err}")
-            raise
-        except:
-            self.logger.error("DB - Error in get_stats_next_game(1)", exc_info=True)
-            return
-        
-        player_dict = dict()
         player_columns = ''
-        for (ID, LastName, FirstName) in self.cursor:
-            player_dict[ID] = f"{FirstName} {LastName[:1]}\\."
-            player_columns += f"p{ID},"
-        
-       
+        for player_id in self.player_chat_id_dict:
+            player_columns += f"p{player_id},"
         # delete last comma
         player_columns = player_columns[:len(player_columns)-1]
+
         # now get next game for all players
         try:
             self.cursor.execute(
                 f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC LIMIT 1;"
             )
         except self.connection.Error as err:
-            self.logger.error(f"DB - Tried to get next Game with status of all players\n{err}")
+            self.logger.error(f"Tried to get next Game with status of all players\n{err}")
             raise
         except:
-            self.logger.error("DB - Error in get_stats_next_game(2)", exc_info=True)
+            self.logger.error("Error in get_stats_next_game(2)", exc_info=True)
             return
         return_row = self.cursor.fetchone()
         result = ''
@@ -154,11 +179,11 @@ class DatabaseHandler(object):
             player_chat_id = int(player[1:len(player)])
             status = return_row[count]
             if status == 0:
-                unsure_list.append(player_dict[player_chat_id])
+                unsure_list.append(self.player_chat_id_dict[player_chat_id])
             elif status == 1:
-                yes_list.append(player_dict[player_chat_id])
+                yes_list.append(self.player_chat_id_dict[player_chat_id])
             elif status == 2:
-                no_list.append(player_dict[player_chat_id])
+                no_list.append(self.player_chat_id_dict[player_chat_id])
             count += 1
 
         player_count = len(yes_list) + len(no_list) + len(unsure_list)
@@ -204,10 +229,10 @@ class DatabaseHandler(object):
                 (game[0],game[1], game[2])
                 )
             except self.connection.Error as err:
-                self.logger.error(f"DB - Tried insert all games into DB \n\t{err}")  
+                self.logger.error(f"Tried insert all games into DB \n\t{err}")  
                 raise    
             except:
-                self.logger.error("DB - Error in insert_games", exc_info=True)
+                self.logger.error("Error in insert_games", exc_info=True)
                 return  
     
 
@@ -233,10 +258,10 @@ class DatabaseHandler(object):
             return True
         except self.connection.Error as err:
             self.connection.rollback()
-            self.logger.error(f"DB - Tried to edit game attendance for {player_column}\n\t{err}")
+            self.logger.error(f"Tried to edit game attendance for {player_column}\n\t{err}")
             raise
         except:
-            self.logger.error("DB - Error in edit_game_attendance", exc_info=True)
+            self.logger.error("Error in edit_game_attendance", exc_info=True)
             return False
 
 
@@ -249,10 +274,10 @@ class DatabaseHandler(object):
                 "SELECT ID, State FROM Players;"
             )
         except self.connection.Error as err:
-            self.logger.error(f"DB - Tried to init state map \n\t{err}")
+            self.logger.error(f"Tried to init state map \n\t{err}")
             raise
         except:
-            self.logger.error("DB - Error in init_state_map", exc_info=True)
+            self.logger.error("Error in init_state_map", exc_info=True)
             return False
         for (ID, State) in self.cursor:
             state_map[ID] = State
@@ -265,10 +290,10 @@ class DatabaseHandler(object):
                 f"UPDATE Players SET State = {new_state} WHERE ID = {chat_id};"
             )
         except self.connection.Error as err:
-            self.logger.error(f"DB - Tried to update state map \n\t{err}")
+            self.logger.error(f"Tried to update state map \n\t{err}")
             raise
         except:
-            self.logger.error("DB - Error in update_state", exc_info=True)
+            self.logger.error("Error in update_state", exc_info=True)
             return False
         return True
 
@@ -277,11 +302,12 @@ def main():
     path = '/'.join((os.path.abspath(__file__).replace('\\', '/')).split('/')[:-1])
     config = configparser.RawConfigParser()
     config.read(os.path.join(path, 'db_config.ini'), encoding='utf8')
-    db_handler = DatabaseHandler(config)
-    db_handler.insert_new_player(3, 'Blibla', 'Blub')
-    #db_handler.insert_new_player(2, 'ralph', 'lauren')
+    # db_handler = DatabaseHandler(config)
+    # db_handler.insert_new_player(3, 'Blibla', 'Blub')
+    #  db_handler.insert_new_player(2, 'ralph', 'lauren')
     # db_handler.get_stats_next_game()
-    db_handler.connection.close()
+    # db_handler.connection.close()
+
 
 if __name__ == "__main__":
         main()

@@ -20,6 +20,12 @@ from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboar
 class ZWTelegramBot(object):
 
     def __init__(self, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, db_config: configparser.RawConfigParser, _logger):
+        """
+        :param config: configuration file for bot
+        :param api_config: configuration file with secrets (Bot Token, admin_chat_id)
+        :param db_config: configuration file for database handler
+        :param _logger: logger instance, will be passed to databaseHandler and scheduleHandler -> one logger for all classes
+        """
         self.config = config
         self.api_config = api_config
         self.admin_chat_id = self.api_config["API"]["admin_chat_id"]
@@ -42,7 +48,12 @@ class ZWTelegramBot(object):
         self.state_map = self.database_handler.init_state_map() 
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
 
+
     def handle(self, msg: dict):
+        """
+        Called each time a message is sent to the bot
+        :param msg: dictionary, parsed from reply-json of each message to bot
+        """
         content_type, chat_type, chat_id = telepot.glance(msg)
 
         # private chat reply
@@ -59,7 +70,7 @@ class ZWTelegramBot(object):
 
                 command = msg['text'].lower()
                 
-                self.logger.info(f"BOT - Got command: {command} from {chat_id}")
+                self.logger.info(f"Got command: {command} from {chat_id}")
                 
                 if chat_id in self.state_map:
                     if self.state_map[chat_id] < 0:
@@ -160,14 +171,14 @@ class ZWTelegramBot(object):
                     # self.bot.sendMessage(chat_id, command)
 
             else:
-                self.logger.info(f"BOT - Got {content_type} from {chat_id}")
+                self.logger.info(f"Got {content_type} from {chat_id}")
 
 
         # group chat reply
         elif chat_type == 'group':
             if content_type == 'text':
                 command = msg['text']
-                self.logger.info(f"BOT - Group-Message - Got {command} from {chat_id}")
+                self.logger.info(f"Group-Message - Got {command} from {chat_id}")
                 # it concerns the bot - so answer
                 if command.startswith('@Zuri_West_Manager_Bot'):
                     command = command[23:]
@@ -175,15 +186,24 @@ class ZWTelegramBot(object):
                         self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_reply_text('stats', 'Group'), parse_mode= 'MarkdownV2')
 
             else:
-                self.logger.info(f"BOT - Got {content_type} from {chat_id}")
+                self.logger.info(f"Got {content_type} from {chat_id}")
 
 
     def start(self):
+        """
+        attach handle() to bot - message_loop
+        """
         self.bot.message_loop(self.handle)
-        self.logger.info("BOT - Bot started")
+        self.logger.info("Bot started")
 
     
     def get_reply_text(self, kind: str, first_name: str):
+        """
+        Send approriate reply text
+        :param kind: which kind of reply, acts as switch value
+        :param first_name: for personalized messages, use first_name
+        :return: a string containing the approriate reply
+        """
         reply = ''
         if kind == 'help':
             reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n"
@@ -216,6 +236,12 @@ class ZWTelegramBot(object):
 
 
     def get_keyboard(self, kind: str, chat_id: int):
+        """
+        Get appropriate ReplyKeyboardMarkup
+        :param kind: :param kind: which keyboard, acts as switch value
+        :param chat_id: Teelgram chat_id of the user the reply is sent to
+        :return: ReplyKeyboardMarkup, returns None: Database Error
+        """
         keyboard = None
         if kind == 'default':
             keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games']], resize_keyboard=True)
@@ -234,6 +260,7 @@ class ZWTelegramBot(object):
 
         return keyboard
 
+
     def update_state_map(self, chat_id: int, new_state: int):
         # update state in Players Table
         self.database_handler.update_state(chat_id, new_state)
@@ -242,6 +269,10 @@ class ZWTelegramBot(object):
 
 
 def init_logger(config: configparser.RawConfigParser):
+    """
+    :param config: the configuration file with which to initialize the Logger
+    :return: logger
+    """
     logger = logging.getLogger(__name__)
     logHandler = TimedRotatingFileHandler(filename="/home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_logger.log", when="midnight")
     # format = '%(asctime)s %(filename)s(%(lineno)d) %(levelname)s %(message)s'
@@ -251,7 +282,14 @@ def init_logger(config: configparser.RawConfigParser):
     logger.addHandler(logHandler)
     return logger
 
+
 def main():
+    """
+    initialize:
+        configuration parsing
+        complete logger
+        Bot
+    """
     # config File
     path = '/'.join((os.path.abspath(__file__).replace('\\', '/')).split('/')[:-1])
     config = configparser.RawConfigParser()
@@ -285,6 +323,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # today = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    # os.rename("/home/pi/Desktop/ZW_Date_bot/ZW_bot.log", f"/home/pi/Desktop/ZW_Date_bot/logs/ZW_bot_{today}.log")
     main()
