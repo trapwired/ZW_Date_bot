@@ -13,6 +13,7 @@ class SchedulerHandler(object):
         # super().__init__()
         self.bot = bot
         self.group_id = config['API']['group_chat_id']
+        self.admin_chat_id = config['API']['admin_chat_id']
         self.database_handler = db_handler
         self.logger = _logger
         self.load_schedules()
@@ -24,7 +25,7 @@ class SchedulerHandler(object):
 
 
     def send_reboot_failure(self):
-        self.bot.sendMessage(self.group_id, 'ERROR - Bot restart failed)')
+        self.bot.sendMessage(self.admin_chat_id, 'ERROR - Bot restart failed)')
 
 
     def load_schedules(self):

@@ -9,6 +9,7 @@ import sys
 
 from DatabaseHandler import DatabaseHandler
 from Scheduler import SchedulerHandler
+from exceptions import NotifyUserException
 
 import utility as util
 
@@ -36,10 +37,10 @@ class ZWTelegramBot(object):
         count = 0
         while count < 10:
             try:
-                self.database_handler = DatabaseHandler(db_config, _logger)
+                self.database_handler = DatabaseHandler(self.bot, db_config, api_config, _logger)
                 count = 10
             except mariadb.Error as err:
-                time.sleep(10)
+                time.sleep(1)
                 count += 1
                 if count > 9:
                     self.bot.sendMessage(self.admin_chat_id, f"ERROR: starting DB\n{err}")
@@ -58,120 +59,128 @@ class ZWTelegramBot(object):
 
         # private chat reply
         if chat_type == 'private':
-            # Access first and last name, check if exists to avoid dict-key error
-            last_name = ' No Name Given'
-            first_name =' No Name Given'
-            if 'last_name' in msg['from'].keys():
-                last_name = msg['from']['last_name'].capitalize()
-            if 'first_name' in msg['from'].keys():
-                first_name = msg['from']['first_name'].capitalize()
+            try:
+                # Access first and last name, check if exists to avoid dict-key error
+                last_name = ' No Name Given'
+                first_name =' No Name Given'
+                if 'last_name' in msg['from'].keys():
+                    last_name = msg['from']['last_name'].capitalize()
+                if 'first_name' in msg['from'].keys():
+                    first_name = msg['from']['first_name'].capitalize()
 
-            if content_type == 'text':
+                if content_type == 'text':
 
-                command = msg['text'].lower()
-                
-                self.logger.info(f"Got command: {command} from {chat_id}")
-                
-                if chat_id in self.state_map:
-                    if self.state_map[chat_id] < 0:
-                    # State: default, all commands can be executed
+                    command = msg['text'].lower()
+                    
+                    self.logger.info(f"Got command: {command} from {chat_id}")
+                    
+                    if chat_id in self.state_map:
+                        if self.state_map[chat_id] < 0:
+                        # State: default, all commands can be executed
 
-                        if command == '/edit_games':
-                            reply_text = self.get_reply_text('edit_games', first_name)
-                            reply_keyboard = self.get_keyboard('overview', chat_id)
-                            self.update_state_map(chat_id, 0)
-                            if reply_keyboard is None:
-                                reply_text = self.get_reply_text('overview_no_games', first_name)
-                                self.update_state_map(chat_id, -1)
-                                reply_keyboard = self.get_keyboard('default', first_name)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard, parse_mode= 'MarkdownV2')
-                     
-                        elif command == '/help':
-                            self.update_state_map(chat_id,-1)
-                            reply_text = self.get_reply_text('help', first_name)
-                            reply_keyboard = self.get_keyboard('default', chat_id)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-
-                        elif command == '/hi' or command == 'hi':
-                            reply_text = self.get_reply_text('hi', first_name)
-                            self.bot.sendMessage(chat_id, reply_text)
-
-                        elif command == '/start':
-                            reply_text = self.get_reply_text('start', first_name)
-                            reply_keyboard = self.get_keyboard('default', chat_id)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-
-                        elif command == '/stats':
-                            reply_text = self.get_reply_text('stats', first_name)
-                            self.bot.sendMessage(chat_id, reply_text, parse_mode= 'MarkdownV2')
-
-
-                    elif self.state_map[chat_id] == 0:
-                    # State: User is on 'overview' of games, expected answer is either a game or 'continue later'
-
-                        game_date = command[:10]
-                        current_game_id = self.database_handler.get_game_id(game_date)
-                        if command == 'continue later':
-                            self.update_state_map(chat_id,-1)
-                            reply_text = self.get_reply_text('continue later', first_name)
-                            reply_keyboard = self.get_keyboard('default', chat_id)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            if command == '/edit_games':
+                                reply_text = self.get_reply_text('edit_games', first_name)
+                                reply_keyboard = self.get_keyboard('overview', chat_id)
+                                self.update_state_map(chat_id, 0)
+                                if reply_keyboard is None:
+                                    reply_text = self.get_reply_text('overview_no_games', first_name)
+                                    self.update_state_map(chat_id, -1)
+                                    reply_keyboard = self.get_keyboard('default', first_name)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard, parse_mode= 'MarkdownV2')
                         
-                        elif current_game_id >= 0:
-                            self.update_state_map(chat_id,current_game_id)
-                            # assemble reply with select-keyboard
-                            reply_text = self.get_reply_text('selection', first_name)
-                            reply_keyboard = self.get_keyboard('select', chat_id)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            elif command == '/help':
+                                self.update_state_map(chat_id,-1)
+                                reply_text = self.get_reply_text('help', first_name)
+                                reply_keyboard = self.get_keyboard('default', chat_id)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                            elif command == '/hi' or command == 'hi':
+                                reply_text = self.get_reply_text('hi', first_name)
+                                self.bot.sendMessage(chat_id, reply_text)
+
+                            elif command == '/start':
+                                reply_text = self.get_reply_text('start', first_name)
+                                reply_keyboard = self.get_keyboard('default', chat_id)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                            elif command == '/stats':
+                                reply_text = self.get_reply_text('stats', first_name)
+                                self.bot.sendMessage(chat_id, reply_text, parse_mode= 'MarkdownV2')
+
+
+                        elif self.state_map[chat_id] == 0:
+                        # State: User is on 'overview' of games, expected answer is either a game or 'continue later'
+
+                            game_date = command[:10]
+                            current_game_id = self.database_handler.get_game_id(game_date)
+                            if command == 'continue later':
+                                self.update_state_map(chat_id,-1)
+                                reply_text = self.get_reply_text('continue later', first_name)
+                                reply_keyboard = self.get_keyboard('default', chat_id)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            
+                            elif current_game_id >= 0:
+                                self.update_state_map(chat_id,current_game_id)
+                                # assemble reply with select-keyboard
+                                reply_text = self.get_reply_text('selection', first_name)
+                                reply_keyboard = self.get_keyboard('select', chat_id)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            else:
+                                # deal with Game not found Error
+                                self.logger.warning(f"Game not found, got {command}")
+
+                        elif self.state_map[chat_id] > 0:
+                            # State: Usure choosing YES/NO/UNSURE for the game with ID self.state_map[chat_id]
+                            if util.status_is_valid(command):
+                                self.database_handler.edit_game_attendance(self.state_map[chat_id], command, chat_id)
+                                # now send overview again
+                                self.update_state_map(chat_id, -1)
+                                msg['text'] = '/edit_games'
+                                self.handle(msg)
+
+                            elif command == 'overview':
+                                self.update_state_map(chat_id,-1)
+                                msg['text'] = '/edit_games'
+                                self.handle(msg)
+
+                            elif command == 'continue later':
+                                self.update_state_map(chat_id,-1)
+                                reply_text = self.get_reply_text('continue later', first_name)
+                                reply_keyboard = self.get_keyboard('default', chat_id)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+
+                    else: # chat_id not in state_map
+                        
+                        if command == '/start':
+                            # add player to Database if not already added
+                            if not self.database_handler.player_present(chat_id):
+                                self.database_handler.insert_new_player(chat_id, first_name, last_name)
+                                self.state_map[chat_id] = -1 
+                                # send reply
+                                reply_text = self.get_reply_text('start', 'there')
+                                reply_keyboard = self.get_keyboard('default', chat_id)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                         else:
-                            # deal with Game not found Error
-                            self.logger.warning(f"Game not found, got {command}")
-
-                    elif self.state_map[chat_id] > 0:
-                        # State: Usure choosing YES/NO/UNSURE for the game with ID self.state_map[chat_id]
-                        if util.status_is_valid(command):
-                            self.database_handler.edit_game_attendance(self.state_map[chat_id], command, chat_id)
-                            # now send overview again
-                            self.update_state_map(chat_id, -1)
-                            msg['text'] = '/edit_games'
-                            self.handle(msg)
-                        elif command == 'overview':
-                            self.update_state_map(chat_id,-1)
-                            msg['text'] = '/edit_games'
-                            self.handle(msg)
-                        elif command == 'continue later':
-                            self.update_state_map(chat_id,-1)
-                            reply_text = self.get_reply_text('continue later', first_name)
-                            reply_keyboard = self.get_keyboard('default', chat_id)
+                            reply_text = self.get_reply_text('init', 'there')
+                            reply_keyboard = self.get_keyboard('init', chat_id)
                             self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-
-                else: # chat_id not in state_map
                     
-                    if command == '/start':
-                        # add player to Database if not already added
-                        if not self.database_handler.player_present(chat_id):
-                            self.database_handler.insert_new_player(chat_id, first_name, last_name)
-                            self.update_state_map(chat_id,-1)
 
-                            # send reply
-                            reply_text = self.get_reply_text('start', 'there')
-                            reply_keyboard = self.get_keyboard('default', chat_id)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                    
-                    else:
-                        reply_text = self.get_reply_text('init', 'there')
-                        reply_keyboard = self.get_keyboard('init', chat_id)
-                        self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                    # else:
+                        # TODO deal with any other message: maybe send /help?
+                        # self.bot.sendMessage(chat_id, command)
 
-                
+                else:
+                    self.logger.info(f"Got {content_type} from {chat_id}")
 
-                # else:
-                    # TODO deal with any other message: maybe send /help?
-                    # self.bot.sendMessage(chat_id, command)
-
-            else:
-                self.logger.info(f"Got {content_type} from {chat_id}")
+            except NotifyUserException as nuException:
+                self.update_state_map(chat_id, -1)
+                self.bot.sendMessage(self.admin_chat_id, f"Error in executing the following query:\n{nuException}")
+                reply_text = self.get_reply_text('error', first_name)
+                reply_keyboard = self.get_keyboard('default', chat_id)
+                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
 
         # group chat reply
@@ -213,6 +222,9 @@ class ZWTelegramBot(object):
 
         elif kind == 'edit_games':
             reply = "Click on the game to change you attendance \\- in brackets you see your current status \\ \n*TIPP: the list ist scrollable*"
+
+        elif kind == 'error':
+            reply = "Hang on - an unknown error occured - please try again in a few minutes - Dominic has been informed"
 
         elif kind == 'hi':
             reply = f"Hi {first_name}"
@@ -263,9 +275,12 @@ class ZWTelegramBot(object):
 
     def update_state_map(self, chat_id: int, new_state: int):
         # update state in Players Table
-        self.database_handler.update_state(chat_id, new_state)
-        # update self.state_map
-        self.state_map[chat_id] = new_state
+        try: 
+            self.database_handler.update_state(chat_id, new_state)
+        except NotifyUserException:
+            raise NotifyUserException
+        else:
+            self.state_map[chat_id] = new_state 
 
 
 def init_logger(config: configparser.RawConfigParser):

@@ -5,13 +5,20 @@ import os
 import logging 
 import utility as util
 import datetime
+import time
+import telepot
+
+from exceptions import NotifyUserException
 
 
 class DatabaseHandler(object):
 
-    def __init__(self, config: configparser.RawConfigParser, _logger):
+    def __init__(self, bot: telepot.Bot, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, _logger):
         self.config = config
         self.logger = _logger
+        self.bot = bot
+        self.admin_chat_id = api_config['API']['admin_chat_id']
+
         # Connect to MariaDB Platform
         try:
             connection = mariadb.connect(
@@ -23,7 +30,7 @@ class DatabaseHandler(object):
 
             )
         except mariadb.Error as e:
-            self.logger.error(f"DB  - Error connecting to MariaDB Platform: {e}")
+            self.logger.error(f"Error connecting to MariaDB Platform: {e}")
             raise
         except:
             self.logger.error("Error in DB-Init", exc_info=True)
@@ -31,7 +38,7 @@ class DatabaseHandler(object):
         # Get Cursor
         self.cursor = connection.cursor()
         self.connection = connection
-        self.logger.info("DB  - DataBase Handler started")
+        self.logger.info("DataBase Handler started")
         self.id_to_game = dict()
 
         # set timeouts to 24hours to prevent "Server gone away - error"
@@ -41,7 +48,7 @@ class DatabaseHandler(object):
         except:
             self.logger.warning(f"session parameters (timeouts) not set!", exc_info=True)
             # deal with it
-
+ 
         # build player dictionary for faster access of all player chat_id's
         self.player_chat_id_dict = self.init_player_chat_id_dict()
 
@@ -82,29 +89,45 @@ class DatabaseHandler(object):
         # Add new Player to Players
         # Add new column to Games
         # Add new Player to State Map
-
-        new_column_name = f"p{chat_id}"
-        self.logger.info(f"trying to add player{firstname} {lastname}")
         try:
-            self.cursor.execute(
-                "INSERT INTO Players(ID, FirstName, LastName) VALUES(?,?,?);",
-                (chat_id, firstname, lastname)
-            )
-            self.logger.info(f"Trying to add V1")
-            self.cursor.execute(
-                f"ALTER TABLE Games ADD COLUMN {new_column_name} INT DEFAULT 0;"
-            )
-            self.logger.info(f"Trying to add V2" )
-            self.connection.commit()
-            self.logger.info(f"Added new Player({firstname} {lastname}), added new col in Games, added to state map")
+            new_column_name = f"p{chat_id}"
+            self.logger.info(f"Trying to add player {firstname} {lastname}")
+            mysql_statement = f"INSERT INTO Players(ID, FirstName, LastName, State) VALUES({chat_id},'{firstname}','{lastname}', -1);"
+            self.execute_mysql_change(mysql_statement, 0)
+
+            mysql_statement2 = f"ALTER TABLE Games ADD COLUMN {new_column_name} INT DEFAULT 0;"
+            self.execute_mysql_change(mysql_statement2, 0)
+
             self.player_chat_id_dict[chat_id] = f"{firstname} {lastname[:1]}\\."
-            return True
+        except NotifyUserException:
+            raise NotifyUserException
+        
+
+    def execute_mysql_change(self, mysql_statement: str, numberOfTries: int):
+        """
+        executes the mysql query given in mysql_statement - if it fails, it invokes itself with numberOfTries incremented by one
+        if numberOfTries exceeds 2, an error is sent to admin_chat_id
+        :param mysql_statement: a string containing the mysql query to execute on the database
+        :param numberOfTries: a number between 0 and 3 indicating how many times the query was already tried to execute
+        :return: True or False, indicating the success / failure of the mysql-query
+        """
+        if numberOfTries > 2:
+            raise NotifyUserException(mysql_statement)
+        try:
+            self.logger.info(f"Executing {mysql_statement}, numberOfTries = {numberOfTries}")
+            self.cursor.execute(mysql_statement)
         except self.connection.Error as err:
-            self.connection.rollback()
-            self.logger.error(f"Tried to add new Player({firstname} {lastname}) to database - failed - rollback\n\t{err}")
-            raise
+            self.logger.error(f" Tried {mysql_statement} - {err}", exc_info=True)
         except:
-            self.logger.error("Rrror insert_new_player", exc_info=True)
+            self.logger.error(f"Tried {mysql_statement}: ", exc_info=True)
+        else:
+            self.connection.commit()
+            return
+
+        self.connection.rollback()
+        time.sleep(0.5)
+        numberOfTries += 1
+        self.execute_mysql_change(mysql_statement, numberOfTries)
 
 
     def player_present(self, chat_id: int):
@@ -222,19 +245,11 @@ class DatabaseHandler(object):
         games.append(['2021-03_27 00:00:00', 'TBA', 'HC Dübendorf'])
         games.append(['2021-04-17 14:00:00', 'Zürich Utogrund', 'SC Volketswil'])
         
-        for game in games:
-            try:
-                self.cursor.execute(
-                    "INSERT INTO Games(DateTime, Place, Adversary) VALUES(?,?,?);", 
-                (game[0],game[1], game[2])
-                )
-            except self.connection.Error as err:
-                self.logger.error(f"Tried insert all games into DB \n\t{err}")  
-                raise    
-            except:
-                self.logger.error("Error in insert_games", exc_info=True)
-                return  
-    
+        try:
+            for game in games:
+                self.execute_mysql_change(game, 0)  
+        except NotifyUserException:
+            raise NotifyUserException
 
     def get_game_id(self, game: str):
         # reverse lookup in self.id_to_game dict
@@ -249,21 +264,12 @@ class DatabaseHandler(object):
     def edit_game_attendance(self, game_id: int, new_status: str, chat_id: int):
         new_status_translated = util.translate_status_from_str(new_status)
         player_column = f"p{chat_id}"
+        mysql_statement = f" UPDATE Games SET {player_column} = {new_status_translated} WHERE ID = {game_id};"
         try:
-            self.cursor.execute(
-                f" UPDATE Games SET {player_column} = {new_status_translated} WHERE ID = {game_id};"
-            )
-            self.connection.commit()
-            self.logger.info(f"DB  - Updated Game {game_id} from {player_column} to {new_status_translated}")
-            return True
-        except self.connection.Error as err:
-            self.connection.rollback()
-            self.logger.error(f"Tried to edit game attendance for {player_column}\n\t{err}")
-            raise
-        except:
-            self.logger.error("Error in edit_game_attendance", exc_info=True)
-            return False
-
+            self.execute_mysql_change(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+        
 
     def init_state_map(self):
         # sql query to init the state_map in main bot class
@@ -285,17 +291,11 @@ class DatabaseHandler(object):
 
 
     def update_state(self, chat_id: int, new_state: int):
+        mysql_statement = f"UPDATE Players SET State = {new_state} WHERE ID = {chat_id};"
         try:
-            self.cursor.execute(
-                f"UPDATE Players SET State = {new_state} WHERE ID = {chat_id};"
-            )
-        except self.connection.Error as err:
-            self.logger.error(f"Tried to update state map \n\t{err}")
-            raise
-        except:
-            self.logger.error("Error in update_state", exc_info=True)
-            return False
-        return True
+            self.execute_mysql_change(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
 
 
 def main():
