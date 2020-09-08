@@ -8,7 +8,7 @@ import datetime
 import time
 import telepot
 
-from exceptions import NotifyUserException
+from exceptions import NotifyUserException, NotifyAdminException
 
 
 class DatabaseHandler(object):
@@ -139,19 +139,38 @@ class DatabaseHandler(object):
             return player_dict
 
 
-    # WORK IN PROGRESS
-    def get_games_in_between_x_y_days(self, x: int, y: int):
-        # get all games that take place in the future between x and y days (including)
+    def get_games_in_between_x_y_days(self, start: int, end: int):
+        # get all games that take place in the future between start and end days (including)
         # Get current date
-        if x == y:
-            print('starting day is same as end day')
-        else: 
-            today = datetime.date.today()
-            in_x_days = (today + datetime.timedelta(days=x)).strftime("%Y-%m-%d")
-            in_y_days = (today + datetime.timedelta(days=y)).strftime("%Y-%m-%d")
-            startDate = f"{in_x_days} 00:00:00"
-            endDate = f"{in_y_days} 00:00:00"
-    
+        # SELECT DateTime, Place, Adversary FROM Games WHERE DateTime BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 500 DAY) ORDER BY DateTime ASC;    
+        (player_columns, player_list) = self.get_player_columns()
+        mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime BETWEEN DATE_ADD(CURDATE(), INTERVAL {start} DAY) AND DATE_ADD(CURDATE(), INTERVAL {end + 1} DAY) ORDER BY DateTime ASC;"
+
+            
+    def get_games_in_exactly_x_days(self, x: int):
+        (player_columns, player_list) = self.get_player_columns()
+        mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DATE(DateTime) = DATE_ADD(CURDATE(), INTERVAL {x} DAY) ORDER BY DateTime ASC;"
+        try:
+            cursor = self.execute_mysql_with_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyAdminException
+        else:
+            result_tuple_list = []
+            for row in cursor.fetchall():
+                game_dateTime = row[0]
+                game_place = row[1]
+                game_adversary = row[2]
+                unsure_chat_id_list = []
+                count = 3
+                for player in player_list:
+                    player_status = row[count]
+                    if player_status == 0:
+                        unsure_chat_id_list.append(player)
+                    count += 1
+                game_info = f"{game_dateTime}|{game_adversary}|{game_place}"
+                result_tuple_list.append((game_info, unsure_chat_id_list))
+            return result_tuple_list
+
 
     def insert_new_player(self, chat_id: int, firstname: str, lastname: str):
         # Add new Player to Players
@@ -200,25 +219,29 @@ class DatabaseHandler(object):
             return button_list
 
     
-    def get_stats_next_game(self):
-        # get all players (chat_id, firstname, lastname)
+    def get_player_columns(self):
         player_columns = ''
+        player_list = []
         for player_id in self.player_chat_id_dict:
             player_columns += f"p{player_id},"
+            player_list.append(player_id)
         # delete last comma
         player_columns = player_columns[:len(player_columns)-1]
+        return (player_columns, player_list)
+
+
+    def get_stats_next_game(self):
+        (player_columns, player_list) = self.get_player_columns()
 
         # now get next game for all players
         try:
-            mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC LIMIT 1;"
+            mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime > CURRENT_TIMESTAMP() ORDER BY DateTime ASC LIMIT 1;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
             raise NotifyUserException
         else:
             return_row = cursor.fetchone()
             result = ''
-            # split by comma to get list in same order as result from sql query
-            player_columns = player_columns.split(',')
             # create 3 lists for Yes(1), No(2), Unsure(0)
             yes_list = []
             no_list = []
@@ -226,15 +249,14 @@ class DatabaseHandler(object):
 
             result = f"{util.make_datetime_pretty_md(return_row[0])} \\| {return_row[1]} \\| {return_row[2]}\n"
             count = 3
-            for player in player_columns:
-                player_chat_id = int(player[1:len(player)])
+            for player in player_list:
                 status = return_row[count]
                 if status == 0:
-                    unsure_list.append(self.player_chat_id_dict[player_chat_id])
+                    unsure_list.append(self.player_chat_id_dict[player])
                 elif status == 1:
-                    yes_list.append(self.player_chat_id_dict[player_chat_id])
+                    yes_list.append(self.player_chat_id_dict[player])
                 elif status == 2:
-                    no_list.append(self.player_chat_id_dict[player_chat_id])
+                    no_list.append(self.player_chat_id_dict[player])
                 count += 1
 
             player_count = len(yes_list) + len(no_list) + len(unsure_list)

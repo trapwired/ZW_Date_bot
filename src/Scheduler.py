@@ -6,6 +6,8 @@ import logging
 from datetime import date
 
 from DatabaseHandler import DatabaseHandler
+from exceptions import NotifyAdminException, NotifyUserException
+
 
 class SchedulerHandler(object):
 
@@ -34,7 +36,9 @@ class SchedulerHandler(object):
 
         # get all games that take place in next two weeks (minus the ones in less than 6 days)
         # remind all unsure players to edit_attendance for this game (send msg at 7am)
-        seven_days_games_list = self.database_handler.get_games_in_between_x_y_days(5,14)
+        
+        # seven_days_games_list = self.database_handler.get_games_in_between_x_y_days(5,14)
+        
         # for (game_id, game_name) in seven_days_games_list:
         #    unsure_players_list = self.database_handler.get_unsure_players(game_id)
         #    for player_id in unsure_players_list:
@@ -45,6 +49,13 @@ class SchedulerHandler(object):
 
 
         # get all games taking place in 5 days
+        try:
+            five_days_games_list = self.database_handler.get_games_in_exactly_x_days(4)
+        except NotifyAdminException:
+            self.bot.sendMessage(self.admin_chat_id, 'Getting the 5 days game did not work, no schedules set for today')
+        else:
+            for (game_info, unsure_players_list) in five_days_games_list:
+                self.logger.info(f"{game_info} and missing are: {unsure_players_list}")
         # remind all unsure players to edit attendance for this game (send msg at 7am)
         # set new scheduler to send message in half the time -> cancel if filled out -> same again
 
