@@ -20,7 +20,7 @@ from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboar
 
 class ZWTelegramBot(object):
 
-    def __init__(self, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, db_config: configparser.RawConfigParser, _logger):
+    def __init__(self, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, db_config: configparser.RawConfigParser, _logger: logging.Logger):
         """
         :param config: configuration file for bot
         :param api_config: configuration file with secrets (Bot Token, admin_chat_id)
@@ -43,7 +43,7 @@ class ZWTelegramBot(object):
                 time.sleep(1)
                 count += 1
                 if count > 9:
-                    self.bot.sendMessage(self.admin_chat_id, f"ERROR: starting DB\n{err}")
+                    self.bot.sendMessage(self.admin_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
                     sys.exit(1)
                     
         self.state_map = self.database_handler.init_state_map() 
@@ -274,6 +274,11 @@ class ZWTelegramBot(object):
 
 
     def update_state_map(self, chat_id: int, new_state: int):
+        """
+        update the state map in program-dict and database
+        :param chat_id: chat_id of player to change state
+        :param new_state: new state to change to
+        """
         # update state in Players Table
         try: 
             self.database_handler.update_state(chat_id, new_state)

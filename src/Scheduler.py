@@ -9,8 +9,7 @@ from DatabaseHandler import DatabaseHandler
 
 class SchedulerHandler(object):
 
-    def __init__(self, config, bot: telepot.Bot, db_handler: DatabaseHandler, _logger):
-        # super().__init__()
+    def __init__(self, config, bot: telepot.Bot, db_handler: DatabaseHandler, _logger: logging.Logger):
         self.bot = bot
         self.group_id = config['API']['group_chat_id']
         self.admin_chat_id = config['API']['admin_chat_id']
@@ -18,7 +17,7 @@ class SchedulerHandler(object):
         self.logger = _logger
         self.load_schedules()
 
-        # since Pi restarts every 24hours, send error to admin if more than 24 hours up
+        # since server restarts every 24hours, send error to admin if more than 24 hours up
         schedule.every(24).hours.do(self.send_reboot_failure)
 
         self.logger.info('Scheduler Handler started')
@@ -50,8 +49,7 @@ class SchedulerHandler(object):
         # set new scheduler to send message in half the time -> cancel if filled out -> same again
 
         # send stats_message to group chat at 20:00 (with wall of shame)
-
-        
+ 
     
     def run_schedule(self):
         # method looped in ZWTelegramBot to run scheduled jobs
