@@ -9,7 +9,7 @@ import sys
 
 from DatabaseHandler import DatabaseHandler
 from Scheduler import SchedulerHandler
-from exceptions import NotifyUserException
+from exceptions import NotifyUserException, NotifyAdminException
 
 import utility as util
 
@@ -33,24 +33,32 @@ class ZWTelegramBot(object):
         self.group_chat_id = self.api_config["API"]["group_chat_id"]
         
         self.logger = _logger
-        self.logger.debug("LOGGER STARTED -----------------------------------")
+        self.logger.info("start main\n\n")
+        self.logger.info("Logger started")
         self.user_whitelist = self.init_user_whitelist()
 
         self.bot = telepot.Bot(self.api_config["API"]["key"])
+        self.database_handler = self.init_databaseHandler(self.bot, db_config, api_config, _logger, self.admin_chat_id)
+                    
+        self.state_map = self.database_handler.init_state_map() 
+        self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
+
+
+    def init_databaseHandler(self, bot: telepot.Bot, db_config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, _logger: logging.Logger, admin_chat_id: int):
         count = 0
         while count < 10:
             try:
-                self.database_handler = DatabaseHandler(self.bot, db_config, api_config, _logger)
+                database_handler = DatabaseHandler(bot, db_config, api_config, _logger)
                 count = 10
             except mariadb.Error as err:
                 time.sleep(1)
                 count += 1
                 if count > 9:
-                    self.bot.sendMessage(self.admin_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
+                    bot.sendMessage(admin_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
                     sys.exit(1)
-                    
-        self.state_map = self.database_handler.init_state_map() 
-        self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
+            except NotifyAdminException as err:
+                bot.sendMessage(admin_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
+        return database_handler
 
 
     def init_user_whitelist(self):
@@ -65,7 +73,6 @@ class ZWTelegramBot(object):
         user_list_split = user_list.split(',')
         for user_id in user_list_split:
             user_whitelist.append(int(user_id))
-        self.logger.info(user_whitelist)
         return user_whitelist
 
 
@@ -238,7 +245,6 @@ class ZWTelegramBot(object):
             self.bot.sendMessage(chat_id, reply_text)
             
                 
-
     def start(self):
         """
         attach handle() to bot - message_loop

@@ -31,9 +31,10 @@ class DatabaseHandler(object):
             )
         except mariadb.Error as e:
             self.logger.error(f"Error connecting to MariaDB Platform: {e}")
-            raise
-        except:
+            raise NotifyAdminException(e)
+        except :
             self.logger.error("Error in DB-Init", exc_info=True)
+            raise NotifyAdminException
     
         # Get Cursor
         self.cursor = connection.cursor()
