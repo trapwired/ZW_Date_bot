@@ -140,21 +140,13 @@ class DatabaseHandler(object):
             return player_dict
 
 
-    def get_games_in_between_x_y_days(self, start: int, end: int):
-        # get all games that take place in the future between start and end days (including)
-        # Get current date
-        # SELECT DateTime, Place, Adversary FROM Games WHERE DateTime BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 500 DAY) ORDER BY DateTime ASC;    
-        (player_columns, player_list) = self.get_player_columns()
-        mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime BETWEEN DATE_ADD(CURDATE(), INTERVAL {start} DAY) AND DATE_ADD(CURDATE(), INTERVAL {end + 1} DAY) ORDER BY DateTime ASC;"
-
-            
     def get_games_in_exactly_x_days(self, x: int):
         (player_columns, player_list) = self.get_player_columns()
-        mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DATE(DateTime) = DATE_ADD(CURDATE(), INTERVAL {x} DAY) ORDER BY DateTime ASC;"
+        mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE DATE(DateTime) = DATE_ADD(CURDATE(), INTERVAL {x} DAY) ORDER BY DateTime ASC;"
         try:
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
-        except NotifyUserException:
-            raise NotifyAdminException
+        except NotifyUserException as nuException:
+            raise NotifyAdminException(nuException)
         else:
             result_tuple_list = []
             for row in cursor.fetchall():
@@ -168,7 +160,7 @@ class DatabaseHandler(object):
                     if player_status == 0:
                         unsure_chat_id_list.append(player)
                     count += 1
-                game_info = f"{game_dateTime}|{game_adversary}|{game_place}"
+                game_info = [str(game_dateTime), game_adversary, game_place]
                 result_tuple_list.append((game_info, unsure_chat_id_list))
             return result_tuple_list
 
@@ -224,10 +216,8 @@ class DatabaseHandler(object):
         player_columns = ''
         player_list = []
         for player_id in self.player_chat_id_dict:
-            player_columns += f"p{player_id},"
+            player_columns += f", p{player_id}"
             player_list.append(player_id)
-        # delete last comma
-        player_columns = player_columns[:len(player_columns)-1]
         return (player_columns, player_list)
 
 
@@ -236,7 +226,7 @@ class DatabaseHandler(object):
 
         # now get next game for all players
         try:
-            mysql_statement = f"SELECT DateTime, Place, Adversary, {player_columns} FROM Games WHERE DateTime > CURRENT_TIMESTAMP() ORDER BY DateTime ASC LIMIT 1;"
+            mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE DateTime > CURRENT_TIMESTAMP() ORDER BY DateTime ASC LIMIT 1;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
             raise NotifyUserException
@@ -298,7 +288,8 @@ class DatabaseHandler(object):
         
         try:
             for game in games:
-                self.execute_mysql_without_result(game, 0)  
+                mysql_statement = f"INSERT INTO Games(ID, DateTime, Place, Adversary) VALUES('{game[0]}','{game[1]}','{game[2]}');"
+                self.execute_mysql_without_result(mysql_statement, 0)  
         except NotifyUserException:
             raise NotifyUserException
 
@@ -309,8 +300,22 @@ class DatabaseHandler(object):
             if game in value:
                 return key
         # if not found in dict (for whatever reasons): lookup in Database
-        # TODO
-        return -1
+        try:
+            dateTime = util.game_string_to_datetime(game)
+        except:
+            return -1
+        else:
+            mysql_statement = f" SELECT ID FROM Games WHERE DateTime = '{dateTime}';"
+            # execute statement
+            try:
+                cursor = self.execute_mysql_with_result(mysql_statement, 0)
+            except NotifyUserException:
+                raise NotifyAdminException
+            else:
+                return_row = cursor.fetchone()
+                game_id = return_row[0]
+                self.id_to_game[game_id] = game
+                return game_id
 
 
     def edit_game_attendance(self, game_id: int, new_status: str, chat_id: int):

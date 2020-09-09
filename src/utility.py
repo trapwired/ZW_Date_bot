@@ -7,14 +7,19 @@ ATTENDANCE = ['UNSURE', 'YES', 'NO']
 
 def make_datetime_pretty(DateTime: datetime):
     # DateTime is of the format: 2020-09-05 17:30:00
-    # date_time_obj = datetime.strptime(DateTime, "%Y-%m-%d %H:%M:%S")
     return DateTime.strftime("%d.%m.%Y %H:%M")
+
+
+def make_datetime_pretty_str(DateTime: str):
+    # DateTime is of the format: 2020-09-05 17:30:00
+    date_time_obj = datetime.strptime(DateTime, "%Y-%m-%d %H:%M:%S")
+    return date_time_obj.strftime("%d.%m.%Y %H:%M")
+
 
 def make_datetime_pretty_md(DateTime: datetime):
     # DateTime is of the format: 2020-09-05 17:30:00
     # date_time_obj = datetime.strptime(DateTime, "%Y-%m-%d %H:%M:%S")
     return DateTime.strftime("%d\\.%m\\.%Y %H\\:%M")
-
 
 
 def translate_status_from_int(status: int):
@@ -37,12 +42,17 @@ def status_is_valid(status: str):
     return status_upper in ATTENDANCE
 
 
-def pretty_print_game(DateTime: datetime, place: str, status: int):
-    pretty_status = f"({translate_status_from_int(status)})"
-    # pretty_status =  (pretty_status + 8 * ' ')[:8]
-    pretty_dateTime = make_datetime_pretty(DateTime)
-    # pretty_place = (place + ' ' * 21)[:21]
-    return f"{pretty_dateTime} | {place} | {pretty_status}"
+def pretty_print_game(DateTime: datetime, place: str, status: int = None):
+    if status:
+        pretty_status = f"({translate_status_from_int(status)})"
+        # pretty_status =  (pretty_status + 8 * ' ')[:8]
+        pretty_dateTime = make_datetime_pretty(DateTime)
+        # pretty_place = (place + ' ' * 21)[:21]
+        return f"{pretty_dateTime} | {place} | {pretty_status}"
+    else:
+        pretty_dateTime = make_datetime_pretty(DateTime)
+        # pretty_place = (place + ' ' * 21)[:21]
+        return f"{pretty_dateTime} | {place}"
     
 
 def is_member_of_group(status: str):
@@ -67,4 +77,6 @@ def write_whitelist_to_file(user_whitelist: list):
         file.truncate()
                 
 
-
+def game_string_to_datetime(game: str):
+    date_time_obj = datetime.strptime(game, "%d.%m.%Y %H:%M")
+    return str(date_time_obj.strftime("%Y-%m-%d %H:%M:%S"))

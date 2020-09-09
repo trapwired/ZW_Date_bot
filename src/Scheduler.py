@@ -17,7 +17,6 @@ class SchedulerHandler(object):
         self.admin_chat_id = config['API']['admin_chat_id']
         self.database_handler = db_handler
         self.logger = _logger
-        self.load_schedules()
 
         # since server restarts every 24hours, send error to admin if more than 24 hours up
         schedule.every(24).hours.do(self.send_reboot_failure)
@@ -30,39 +29,51 @@ class SchedulerHandler(object):
 
 
     def load_schedules(self):
-        # TODO load schedules from Database and add them to scheduler
-        print('hi')
+        """Iterates through all Games in 5/6/7/14 days and returns a list of chat_ids of players that indicated UNSURE in any of the Games
 
-
-        # get all games that take place in next two weeks (minus the ones in less than 6 days)
-        # remind all unsure players to edit_attendance for this game (send msg at 7am)
-        
-        # seven_days_games_list = self.database_handler.get_games_in_between_x_y_days(5,14)
-        
-        # for (game_id, game_name) in seven_days_games_list:
-        #    unsure_players_list = self.database_handler.get_unsure_players(game_id)
-        #    for player_id in unsure_players_list:
-                
-
-        # get all games that take place in 7 days
-        # remind all unsure players to edit attendance for this game (send msg at 7am)
-
-
-        # get all games taking place in 5 days
+        Returns:
+            dict(): a dictionary from chat_ids to lists of game infos ([game_date, game_place, game_adversary])
+        """
         try:
             five_days_games_list = self.database_handler.get_games_in_exactly_x_days(4)
+            six_days_games_list = self.database_handler.get_games_in_exactly_x_days(5)
+            seven_days_games_list = self.database_handler.get_games_in_exactly_x_days(6)
+            fourteen_days_games_list = self.database_handler.get_games_in_exactly_x_days(13)
+            player_to_messages_map = dict()
         except NotifyAdminException:
             self.bot.sendMessage(self.admin_chat_id, 'Getting the 5 days game did not work, no schedules set for today')
         else:
-            for (game_info, unsure_players_list) in five_days_games_list:
-                self.logger.info(f"{game_info} and missing are: {unsure_players_list}")
-                
-        # remind all unsure players to edit attendance for this game (send msg at 7am)
-        # set new scheduler to send message in half the time -> cancel if filled out -> same again
-
-        # send stats_message to group chat at 20:00 (with wall of shame)
+            for (game_info_list, unsure_players_list) in five_days_games_list:
+                for unsure_player in unsure_players_list:
+                    if unsure_player not in player_to_messages_map:
+                        player_to_messages_map[unsure_player] = []
+                    player_to_messages_map[unsure_player].append(game_info_list)
+            for (game_info_list, unsure_players_list) in six_days_games_list:
+                for unsure_player in unsure_players_list:
+                    if unsure_player not in player_to_messages_map:
+                        player_to_messages_map[unsure_player] = []
+                    player_to_messages_map[unsure_player].append(game_info_list)
+            for (game_info_list, unsure_players_list) in seven_days_games_list:
+                for unsure_player in unsure_players_list:
+                    if unsure_player not in player_to_messages_map:
+                        player_to_messages_map[unsure_player] = []
+                    player_to_messages_map[unsure_player].append(game_info_list)
+            for (game_info_list, unsure_players_list) in fourteen_days_games_list:
+                for unsure_player in unsure_players_list:
+                    if unsure_player not in player_to_messages_map:
+                        player_to_messages_map[unsure_player] = []
+                    player_to_messages_map[unsure_player].append(game_info_list)
+            return player_to_messages_map
  
+
+    def send_reminder_at_8am(self, function):
+        schedule.every().day.at("08:00").do(function)
     
+
+    def send_stats_to_group_chat(self, function):
+        schedule.every().day.at("22:00").do(function)
+
+
     def run_schedule(self):
         # method looped in ZWTelegramBot to run scheduled jobs
         schedule.run_pending()
