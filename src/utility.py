@@ -45,3 +45,26 @@ def pretty_print_game(DateTime: datetime, place: str, status: int):
     return f"{pretty_dateTime} | {place} | {pretty_status}"
     
 
+def is_member_of_group(status: str):
+    possibleStati = ['creator', 'administrator', 'member', 'restricted']
+    return status in possibleStati
+
+
+def write_whitelist_to_file(user_whitelist: list):
+    with open("/home/pi/Desktop/ZW_Date_bot/src/api.ini", "r+") as file:
+        lines = file.readlines()
+        file.seek(0)
+        for line in lines:
+            new_line = line
+            if line.startswith('user_whitelist = '):
+                # write new whitelist
+                new_line = 'user_whitelist = '
+                for user_id in user_whitelist:
+                    new_line += f"{user_id}, "
+                # get rid of last comma
+                new_line = new_line[:len(new_line)-2] + '\n'
+            file.write(new_line)
+        file.truncate()
+                
+
+

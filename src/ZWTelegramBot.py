@@ -30,8 +30,11 @@ class ZWTelegramBot(object):
         self.config = config
         self.api_config = api_config
         self.admin_chat_id = self.api_config["API"]["admin_chat_id"]
+        self.group_chat_id = self.api_config["API"]["group_chat_id"]
+        
         self.logger = _logger
         self.logger.debug("LOGGER STARTED -----------------------------------")
+        self.user_whitelist = self.init_user_whitelist()
 
         self.bot = telepot.Bot(self.api_config["API"]["key"])
         count = 0
@@ -50,6 +53,22 @@ class ZWTelegramBot(object):
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
 
 
+    def init_user_whitelist(self):
+        """load the user_ids saved in api_config to list for faster access
+
+        Returns:
+            list: A List containing all user id's allowed to exchange messages with the bot
+        """
+        user_list = self.api_config["API"]["user_whitelist"]
+        user_whitelist = []
+        user_whitelist.append(int(self.group_chat_id))
+        user_list_split = user_list.split(',')
+        for user_id in user_list_split:
+            user_whitelist.append(int(user_id))
+        self.logger.info(user_whitelist)
+        return user_whitelist
+
+
     def handle(self, msg: dict):
         """
         Called each time a message is sent to the bot
@@ -57,146 +76,168 @@ class ZWTelegramBot(object):
         """
         content_type, chat_type, chat_id = telepot.glance(msg)
 
-        # private chat reply
-        if chat_type == 'private':
-            try:
-                # Access first and last name, check if exists to avoid dict-key error
-                last_name = ' No Name Given'
-                first_name =' No Name Given'
-                if 'last_name' in msg['from'].keys():
-                    last_name = msg['from']['last_name'].capitalize()
-                if 'first_name' in msg['from'].keys():
-                    first_name = msg['from']['first_name'].capitalize()
+        # first check if user in self.user_whitelist
+        if chat_id in self.user_whitelist:
 
-                if content_type == 'text':
+            # private chat reply
+            if chat_type == 'private':
 
-                    command = msg['text'].lower()
-                    
-                    self.logger.info(f"Got command: {command} from {chat_id}")
-                    
-                    if chat_id in self.state_map:
-                        if self.state_map[chat_id] < 0:
-                        # State: default, all commands can be executed
+                try:
+                    # Access first and last name, check if exists to avoid dict-key error
+                    last_name = ' No Name Given'
+                    first_name =' No Name Given'
+                    if 'last_name' in msg['from'].keys():
+                        last_name = msg['from']['last_name'].capitalize()
+                    if 'first_name' in msg['from'].keys():
+                        first_name = msg['from']['first_name'].capitalize()
 
-                            if command == '/edit_games':
-                                reply_text = self.get_reply_text('edit_games', first_name)
-                                reply_keyboard = self.get_keyboard('overview', chat_id)
-                                self.update_state_map(chat_id, 0)
-                                if reply_keyboard is None:
-                                    reply_text = self.get_reply_text('overview_no_games', first_name)
-                                    self.update_state_map(chat_id, -1)
-                                    reply_keyboard = self.get_keyboard('default', first_name)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard, parse_mode= 'MarkdownV2')
+                    if content_type == 'text':
+
+                        command = msg['text'].lower()
                         
-                            elif command == '/help':
-                                self.update_state_map(chat_id,-1)
-                                reply_text = self.get_reply_text('help', first_name)
-                                reply_keyboard = self.get_keyboard('default', chat_id)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                        self.logger.info(f"Got command: {command} from {chat_id}")
+                        
+                        if chat_id in self.state_map:
+                            if self.state_map[chat_id] < 0:
+                            # State: default, all commands can be executed
 
-                            elif command == '/hi' or command == 'hi':
-                                reply_text = self.get_reply_text('hi', first_name)
-                                self.bot.sendMessage(chat_id, reply_text)
-
-                            elif command == '/start':
-                                reply_text = self.get_reply_text('start', first_name)
-                                reply_keyboard = self.get_keyboard('default', chat_id)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-
-                            elif command == '/stats':
-                                reply_text = self.get_reply_text('stats', first_name)
-                                self.bot.sendMessage(chat_id, reply_text, parse_mode= 'MarkdownV2')
-
-
-                        elif self.state_map[chat_id] == 0:
-                        # State: User is on 'overview' of games, expected answer is either a game or 'continue later'
-
-                            game_date = command[:10]
-                            current_game_id = self.database_handler.get_game_id(game_date)
-                            if command == 'continue later':
-                                self.update_state_map(chat_id,-1)
-                                reply_text = self.get_reply_text('continue later', first_name)
-                                reply_keyboard = self.get_keyboard('default', chat_id)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                if command == '/edit_games':
+                                    reply_text = self.get_reply_text('edit_games', first_name)
+                                    reply_keyboard = self.get_keyboard('overview', chat_id)
+                                    self.update_state_map(chat_id, 0)
+                                    if reply_keyboard is None:
+                                        reply_text = self.get_reply_text('overview_no_games', first_name)
+                                        self.update_state_map(chat_id, -1)
+                                        reply_keyboard = self.get_keyboard('default', first_name)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard, parse_mode= 'MarkdownV2')
                             
-                            elif current_game_id >= 0:
-                                self.update_state_map(chat_id,current_game_id)
-                                # assemble reply with select-keyboard
-                                reply_text = self.get_reply_text('selection', first_name)
-                                reply_keyboard = self.get_keyboard('select', chat_id)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                elif command == '/help':
+                                    self.update_state_map(chat_id,-1)
+                                    reply_text = self.get_reply_text('help', first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                                elif command == '/hi' or command == 'hi':
+                                    reply_text = self.get_reply_text('hi', first_name)
+                                    self.bot.sendMessage(chat_id, reply_text)
+
+                                elif command == '/start':
+                                    reply_text = self.get_reply_text('start', first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                                elif command == '/stats':
+                                    reply_text = self.get_reply_text('stats', first_name)
+                                    self.bot.sendMessage(chat_id, reply_text, parse_mode= 'MarkdownV2')
+
+
+                            elif self.state_map[chat_id] == 0:
+                            # State: User is on 'overview' of games, expected answer is either a game or 'continue later'
+
+                                game_date = command[:10]
+                                current_game_id = self.database_handler.get_game_id(game_date)
+                                if command == 'continue later':
+                                    self.update_state_map(chat_id,-1)
+                                    reply_text = self.get_reply_text('continue later', first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                
+                                elif current_game_id >= 0:
+                                    self.update_state_map(chat_id,current_game_id)
+                                    # assemble reply with select-keyboard
+                                    reply_text = self.get_reply_text('selection', first_name)
+                                    reply_keyboard = self.get_keyboard('select', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                else:
+                                    # deal with Game not found Error
+                                    self.logger.warning(f"Game not found, got {command}")
+
+                            elif self.state_map[chat_id] > 0:
+                                # State: Usure choosing YES/NO/UNSURE for the game with ID self.state_map[chat_id]
+                                if util.status_is_valid(command):
+                                    self.database_handler.edit_game_attendance(self.state_map[chat_id], command, chat_id)
+                                    # now send overview again
+                                    self.update_state_map(chat_id, -1)
+                                    msg['text'] = '/edit_games'
+                                    self.handle(msg)
+
+                                elif command == 'overview':
+                                    self.update_state_map(chat_id,-1)
+                                    msg['text'] = '/edit_games'
+                                    self.handle(msg)
+
+                                elif command == 'continue later':
+                                    self.update_state_map(chat_id,-1)
+                                    reply_text = self.get_reply_text('continue later', first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+
+                        else: # chat_id not in state_map
+                            
+                            if command == '/start':
+                                # add player to Database if not already added
+                                if not self.database_handler.player_present(chat_id):
+                                    self.database_handler.insert_new_player(chat_id, first_name, last_name)
+                                    self.state_map[chat_id] = -1 
+                                    # send reply
+                                    reply_text = self.get_reply_text('start', 'there')
+                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                             else:
-                                # deal with Game not found Error
-                                self.logger.warning(f"Game not found, got {command}")
-
-                        elif self.state_map[chat_id] > 0:
-                            # State: Usure choosing YES/NO/UNSURE for the game with ID self.state_map[chat_id]
-                            if util.status_is_valid(command):
-                                self.database_handler.edit_game_attendance(self.state_map[chat_id], command, chat_id)
-                                # now send overview again
-                                self.update_state_map(chat_id, -1)
-                                msg['text'] = '/edit_games'
-                                self.handle(msg)
-
-                            elif command == 'overview':
-                                self.update_state_map(chat_id,-1)
-                                msg['text'] = '/edit_games'
-                                self.handle(msg)
-
-                            elif command == 'continue later':
-                                self.update_state_map(chat_id,-1)
-                                reply_text = self.get_reply_text('continue later', first_name)
-                                reply_keyboard = self.get_keyboard('default', chat_id)
+                                reply_text = self.get_reply_text('init', 'there')
+                                reply_keyboard = self.get_keyboard('init', chat_id)
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-
-                    else: # chat_id not in state_map
                         
-                        if command == '/start':
-                            # add player to Database if not already added
-                            if not self.database_handler.player_present(chat_id):
-                                self.database_handler.insert_new_player(chat_id, first_name, last_name)
-                                self.state_map[chat_id] = -1 
-                                # send reply
-                                reply_text = self.get_reply_text('start', 'there')
-                                reply_keyboard = self.get_keyboard('default', chat_id)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                        else:
-                            reply_text = self.get_reply_text('init', 'there')
-                            reply_keyboard = self.get_keyboard('init', chat_id)
-                            self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-                    
+                        # else:
+                            # TODO deal with any other message: maybe send /help?
+                            # self.bot.sendMessage(chat_id, command)
 
-                    # else:
-                        # TODO deal with any other message: maybe send /help?
-                        # self.bot.sendMessage(chat_id, command)
+                    else:
+                        self.logger.info(f"Got {content_type} from {chat_id}")
+
+                except NotifyUserException as nuException:
+                    self.update_state_map(chat_id, -1)
+                    self.bot.sendMessage(self.admin_chat_id, f"Error in executing the following query:\n{nuException}")
+                    reply_text = self.get_reply_text('error', first_name)
+                    reply_keyboard = self.get_keyboard('default', chat_id)
+                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+
+            # group chat reply
+            elif chat_type == 'group':
+                if content_type == 'text':
+                    command = msg['text']
+                    self.logger.info(f"Group-Message - Got {command} from {chat_id}")
+                    # it concerns the bot - so answer
+                    if command.startswith('@Zuri_West_Manager_Bot'):
+                        command = command[23:]
+                        if command == '/stats' or command == 'stats':
+                            self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_reply_text('stats', 'Group'), parse_mode= 'MarkdownV2')
 
                 else:
                     self.logger.info(f"Got {content_type} from {chat_id}")
-
-            except NotifyUserException as nuException:
-                self.update_state_map(chat_id, -1)
-                self.bot.sendMessage(self.admin_chat_id, f"Error in executing the following query:\n{nuException}")
-                reply_text = self.get_reply_text('error', first_name)
-                reply_keyboard = self.get_keyboard('default', chat_id)
-                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-
-
-        # group chat reply
-        elif chat_type == 'group':
-            if content_type == 'text':
-                command = msg['text']
-                self.logger.info(f"Group-Message - Got {command} from {chat_id}")
-                # it concerns the bot - so answer
-                if command.startswith('@Zuri_West_Manager_Bot'):
-                    command = command[23:]
-                    if command == '/stats' or command == 'stats':
-                        self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_reply_text('stats', 'Group'), parse_mode= 'MarkdownV2')
-
-            else:
-                self.logger.info(f"Got {content_type} from {chat_id}")
-
+        
+        # user not in whitelist, check if in group
+        else:
+            if chat_id > 0:
+                # message from user, check if in group
+                chatMemberInformation = self.bot.getChatMember(self.group_chat_id, chat_id)
+                statusInformation = chatMemberInformation['status']
+                isMember = bool(util.is_member_of_group(statusInformation))
+                if isMember:
+                    # add to whitelist, handle message again
+                    self.user_whitelist.append(int(chat_id))
+                    util.write_whitelist_to_file(self.user_whitelist[1:len(self.user_whitelist)])
+                    self.handle(msg)
+                    return
+            self.logger.info(f"Unauthorized bot usage from {chat_id}")
+            reply_text = self.get_reply_text('no_Association', 'someone')
+            self.bot.sendMessage(chat_id, reply_text)
+            
+                
 
     def start(self):
         """
@@ -228,6 +269,9 @@ class ZWTelegramBot(object):
 
         elif kind == 'hi':
             reply = f"Hi {first_name}"
+
+        elif kind == 'no_Association':
+            reply = f"You are not allowed to use this bot, if you think this is wrong doing, contact your referrer"
 
         elif kind == 'overview_no_games':
             reply = 'There are no upcoming games'
