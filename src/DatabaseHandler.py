@@ -3,11 +3,11 @@ import sys
 import configparser
 import os
 import logging 
-import utility as util
 import datetime
 import time
 import telepot
 
+import utility as util
 from exceptions import NotifyUserException, NotifyAdminException
 
 
