@@ -2,31 +2,73 @@ from datetime import datetime
 import logging
 
 
+# Final List of the possibilities for game attendance
 ATTENDANCE = ['UNSURE', 'YES', 'NO']
 
 
 def make_datetime_pretty(DateTime: datetime):
-    # DateTime is of the format: 2020-09-05 17:30:00
+    """pretty print DateTime
+
+    Args:
+        DateTime (datetime): DateTime to pretty print, format: 2020-09-05 17:30:00
+
+    Returns:
+        str: pretty printed DateTime
+    """
+
     return DateTime.strftime("%d.%m.%Y %H:%M")
 
 
 def make_datetime_pretty_str(DateTime: str):
-    # DateTime is of the format: 2020-09-05 17:30:00
+    """pretty print DateTime from string
+
+    Args:
+        DateTime (str): String to pretty print, format: 2020-09-05 17:30:00
+
+    Returns:
+        str: pretty printed DateTime
+    """
+
     date_time_obj = datetime.strptime(DateTime, "%Y-%m-%d %H:%M:%S")
     return date_time_obj.strftime("%d.%m.%Y %H:%M")
 
 
 def make_datetime_pretty_md(DateTime: datetime):
-    # DateTime is of the format: 2020-09-05 17:30:00
-    # date_time_obj = datetime.strptime(DateTime, "%Y-%m-%d %H:%M:%S")
+    """pretty print DateTime for use in Markdown
+
+    Args:
+        DateTime (datetime): DateTime to pretty print, format: 2020-09-05 17:30:00
+
+    Returns:
+        str: pretty printed DateTime, in markdown syntax
+    """
+
     return DateTime.strftime("%d\\.%m\\.%Y %H\\:%M")
 
 
 def translate_status_from_int(status: int):
+    """Translate status-number to status-string
+
+    Args:
+        status (int): number describing status
+
+    Returns:
+        str: Status as string
+    """
+
     return ATTENDANCE[status]
 
 
 def translate_status_from_str(status: str):
+    """Translate status from String to int
+
+    Args:
+        status (str): Status to translate
+
+    Returns:
+        int: translated status to int
+    """
+
     status = status.upper()
     index = 0
     for stat in ATTENDANCE:
@@ -38,33 +80,71 @@ def translate_status_from_str(status: str):
 
 
 def status_is_valid(status: str):
+    """return whether a given status (str) is valid
+
+    Args:
+        status (str): status to validate
+
+    Returns:
+        bool: status valid?
+    """
+
     status_upper = status.upper()
     return status_upper in ATTENDANCE
 
 
 def pretty_print_game(DateTime: datetime, place: str, status: int = None):
+    """pretty print game infos  
+
+    Args:
+        DateTime (datetime): dateTime of the game
+        place (str): Place of the game
+        status (int, optional): if not given, leave out, else append. Defaults to None.
+
+    Returns:
+        str: pretty-printed game 
+    """
     if status is None:
+        # don't include status
         pretty_dateTime = make_datetime_pretty(DateTime)
         return f"{pretty_dateTime} | {place}"
     else:
+        # include status
         pretty_status = f"({translate_status_from_int(status)})"
-        # pretty_status =  (pretty_status + 8 * ' ')[:8]
         pretty_dateTime = make_datetime_pretty(DateTime)
-        # pretty_place = (place + ' ' * 21)[:21]
         return f"{pretty_dateTime} | {place} | {pretty_status}"
         
     
 def is_member_of_group(status: str):
+    """check, whether a given status indicates group-association
+
+    Args:
+        status (str): status to check
+
+    Returns:
+        bool: is a person with status in this group?
+    """
+
     possibleStati = ['creator', 'administrator', 'member', 'restricted']
     return status in possibleStati
 
 
 def write_whitelist_to_file(user_whitelist: list):
+    """export user_whitelist to the api.ini file, so its initialized on the next restart 
+
+    Args:
+        user_whitelist (list): list of int's representing the chat_id's of users
+    """
+
     with open("/home/pi/Desktop/ZW_Date_bot/src/api.ini", "r+") as file:
+        # read all lines
         lines = file.readlines()
+        # place cursor at start of file
         file.seek(0)
+        # loop over lines
         for line in lines:
             new_line = line
+            # leave all lines as they are, except we encountered the stored chat_ids
             if line.startswith('user_whitelist = '):
                 # write new whitelist
                 new_line = 'user_whitelist = '
@@ -73,9 +153,19 @@ def write_whitelist_to_file(user_whitelist: list):
                 # get rid of last comma
                 new_line = new_line[:len(new_line)-2] + '\n'
             file.write(new_line)
+        # save new file (size)
         file.truncate()
                 
 
 def game_string_to_datetime(game: str):
+    """convert a pretty-printed game-string back to a DateTime Object
+
+    Args:
+        game (str): date and time String, format: 12.09.2020 12:30
+
+    Returns:
+        str: String of game in format 2020-09-12 12:30:00
+    """
+    
     date_time_obj = datetime.strptime(game, "%d.%m.%Y %H:%M")
     return str(date_time_obj.strftime("%Y-%m-%d %H:%M:%S"))
