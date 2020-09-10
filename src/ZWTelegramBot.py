@@ -98,7 +98,7 @@ class ZWTelegramBot(object):
         user_whitelist.append(int(self.group_chat_id))
         user_list_split = user_list.split(',')
         for user_id in user_list_split:
-            user_whitelist.append(int(user_id))
+            user_whitelist.append(user_id)
         return user_whitelist
 
 
@@ -110,6 +110,7 @@ class ZWTelegramBot(object):
         content_type, chat_type, chat_id = telepot.glance(msg)
 
         # first check if user in self.user_whitelist
+        self.logger.info(msg)
         if chat_id in self.user_whitelist:
 
             # private chat reply
@@ -241,19 +242,23 @@ class ZWTelegramBot(object):
 
 
             # group chat reply
-            elif chat_type == 'group':
-                if content_type == 'text':
-                    command = msg['text']
-                    self.logger.info(f"Group-Message - Got {command} from {chat_id}")
-                    # it concerns the bot - so answer
-                    if command.startswith('@Zuri_West_Manager_Bot'):
-                        command = command[23:]
-                        if command == '/stats' or command == 'stats':
-                            self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_reply_text('stats'), parse_mode= 'MarkdownV2')
+            elif chat_type in ['group', 'supergroup']:
+                try:
+                    if content_type == 'text':
+                        command = msg['text']
+                        self.logger.info(f"Group-Message - Got {command} from {chat_id}")
+                        # it concerns the bot - so answer
+                        if command.startswith('@Zuri_West_Manager_Bot'):
+                            command = command[23:]
+                            if 'stats' in command:
+                                self.bot.sendMessage(chat_id, 'The stats for our next game are:\n' + self.get_reply_text('stats'), parse_mode= 'MarkdownV2')
 
-                else:
-                    self.logger.info(f"Got {content_type} from {chat_id}")
-        
+                    else:
+                        self.logger.info(f"Got {content_type} from {chat_id}")
+                except (NotifyUserException, NotifyAdminException) as nuException:
+                    self.bot.sendMessage(self.admin_chat_id, f"Error in executing the following query:\n{nuException}")
+
+
         # user not in whitelist, check if in group
         else:
             if chat_id > 0:
@@ -269,6 +274,7 @@ class ZWTelegramBot(object):
                     return
             self.logger.info(f"Unauthorized bot usage from {chat_id}")
             reply_text = self.get_reply_text('no_Association')
+            self.logger.info('would send not authorized')
             self.bot.sendMessage(chat_id, reply_text)
             
                 

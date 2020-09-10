@@ -43,18 +43,17 @@ def status_is_valid(status: str):
 
 
 def pretty_print_game(DateTime: datetime, place: str, status: int = None):
-    if status:
+    if status is None:
+        pretty_dateTime = make_datetime_pretty(DateTime)
+        return f"{pretty_dateTime} | {place}"
+    else:
         pretty_status = f"({translate_status_from_int(status)})"
         # pretty_status =  (pretty_status + 8 * ' ')[:8]
         pretty_dateTime = make_datetime_pretty(DateTime)
         # pretty_place = (place + ' ' * 21)[:21]
         return f"{pretty_dateTime} | {place} | {pretty_status}"
-    else:
-        pretty_dateTime = make_datetime_pretty(DateTime)
-        # pretty_place = (place + ' ' * 21)[:21]
-        return f"{pretty_dateTime} | {place}"
+        
     
-
 def is_member_of_group(status: str):
     possibleStati = ['creator', 'administrator', 'member', 'restricted']
     return status in possibleStati
@@ -70,7 +69,7 @@ def write_whitelist_to_file(user_whitelist: list):
                 # write new whitelist
                 new_line = 'user_whitelist = '
                 for user_id in user_whitelist:
-                    new_line += f"{user_id}, "
+                    new_line += f"{str(user_id).strip()}, "
                 # get rid of last comma
                 new_line = new_line[:len(new_line)-2] + '\n'
             file.write(new_line)

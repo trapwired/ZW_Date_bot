@@ -169,6 +169,9 @@ class DatabaseHandler(object):
         # Add new Player to Players
         # Add new column to Games
         # Add new Player to State Map
+        if lastname == ' No Name Given' or firstname == ' No Name Given':
+            self.bot.sendMessage(self.admin_chat_id, f"remember to manually update the name of {firstname} {lastname}")
+
         try:
             new_column_name = f"p{chat_id}"
             mysql_statement = f"INSERT INTO Players(ID, FirstName, LastName, State) VALUES({chat_id},'{firstname}','{lastname}', -1);"
