@@ -84,7 +84,7 @@ class SchedulerHandler(object):
             return player_to_messages_map
  
 
-    def send_reminder_at_8am(self, function: function):
+    def send_reminder_at_8am(self, function):
         """schedule function at 8am
 
         Args:
@@ -93,7 +93,7 @@ class SchedulerHandler(object):
         schedule.every().day.at("08:00").do(function)
     
 
-    def send_stats_to_group_chat(self, function: function):
+    def send_stats_to_group_chat(self, function):
         """schedule function at 10pm
 
         Args:

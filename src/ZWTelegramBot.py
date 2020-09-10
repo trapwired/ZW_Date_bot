@@ -41,15 +41,15 @@ class ZWTelegramBot(object):
         self.logger.info("start main\n\n")
         self.logger.info("Logger started")
 
-        # initialize lists / dicts
-        self.user_whitelist = self.init_user_whitelist()
-        self.state_map = self.database_handler.init_state_map() 
-
         # start Bot
         self.bot = telepot.Bot(self.api_config["API"]["key"])
 
         # start DataBase Handler
         self.database_handler = self.init_databaseHandler(self.bot, db_config, api_config, _logger, self.admin_chat_id)
+
+        # initialize lists / dicts
+        self.user_whitelist = self.init_user_whitelist()
+        self.state_map = self.database_handler.init_state_map() 
                     
         # start Scheduler Handler
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
@@ -466,7 +466,7 @@ def init_logger(config: configparser.RawConfigParser):
     return logger
 
 
-def main():S
+def main():
     """initialize:
     configuration parsing
     complete logger
