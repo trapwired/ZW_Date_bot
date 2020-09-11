@@ -15,7 +15,7 @@ from exceptions import NotifyUserException, NotifyAdminException
 import utility as util
 
 import telepot
-from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 class ZWTelegramBot(object):
@@ -55,6 +55,13 @@ class ZWTelegramBot(object):
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
         self.scheduler_handler.send_reminder_at_8am(self.send_reminders)
         self.scheduler_handler.send_stats_to_group_chat(self.send_stats_to_group_chat)
+
+        # testing - TO DELETE
+        info = self.bot.sendMessage(self.admin_chat_id, 'testing custom keyboard', reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+                                    [InlineKeyboardButton(text="One",callback_data='1'),InlineKeyboardButton(text="Two",callback_data='2'), InlineKeyboardButton(text="Three",callback_data='3')],
+                                ]
+                            ))
+        self.messageID = info['message_id']
         
 
     def send_reminders(self):
@@ -224,6 +231,10 @@ class ZWTelegramBot(object):
                                     else:
                                         # Game not in DataBase, ignore input
                                         self.logger.warning(f"Game not found, got {command}")
+                                        self.update_state_map(chat_id, -1)
+                                        msg['text'] = '/help'
+                                        self.handle(msg)
+
 
                             elif self.state_map[chat_id] > 0:
                                 # State: User choosing YES/NO/UNSURE for the game with ID self.state_map[chat_id]
@@ -245,6 +256,10 @@ class ZWTelegramBot(object):
                                     reply_text = self.get_reply_text('continue later', first_name)
                                     reply_keyboard = self.get_keyboard('default', chat_id)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                else:
+                                    self.update_state_map(chat_id, -1)
+                                    msg['text'] = '/help'
+                                    self.handle(msg)
 
 
                         else: 
@@ -321,10 +336,26 @@ class ZWTelegramBot(object):
             self.bot.sendMessage(chat_id, reply_text)
             
                 
-    def start(self):
-        """attach handle() to bot - message_loop
+    def handle_callback_query(self, msg: dict):
+        """handle callback queries - WORK IN PROGRESS
+
+        Args:
+            msg (dict): parsed from reply-json of each message to bot
         """
-        self.bot.message_loop(self.handle)
+
+        query_id, from_id, query_data = telepot.glance(msg, flavor='callback_query')
+        self.logger.info(f"Callback Query: {query_id}, {from_id}, {query_data}")
+        if int(query_data) < 4: 
+            ikm = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"blub{query_data}",callback_data='4')]])
+            self.bot.editMessageReplyMarkup((from_id, self.messageID), reply_markup=ikm)
+        else:
+            self.bot.answerCallbackQuery(query_id, text='Got it')
+
+
+    def start(self):
+        """attach handle() and handle_callback_query() to bot - message_loop
+        """
+        self.bot.message_loop({'chat': self.handle, 'callback_query': self.handle_callback_query})
         self.logger.info("Bot started")
 
     
@@ -507,3 +538,15 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+    """
+    send inline button to handball.ch website
+        self.bot.sendMessage(self.admin_chat_id, 'Handball.ch Website', reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+                                   [InlineKeyboardButton(text="handball.ch/Züri West 1",url='https://www.handball.ch/de/matchcenter/teams/32010')]
+                                ]
+                            ))
+
+
+
+    """
