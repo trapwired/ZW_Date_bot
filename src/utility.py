@@ -169,3 +169,30 @@ def game_string_to_datetime(game: str):
     
     date_time_obj = datetime.strptime(game, "%d.%m.%Y %H:%M")
     return str(date_time_obj.strftime("%Y-%m-%d %H:%M:%S"))
+
+
+def parse_user_dateTime(dateTime: str):
+    """parse a user-submitted date for insertion into DataBase
+
+    Args:
+        dateTime (str): a string containing a dateTime in the format %d.%m.%Y %H:%M
+
+    Returns:
+        str: parsed dateTime to Database format
+    """
+    date_time_obj = datetime.strptime(dateTime, "%d.%m.%Y %H:%M")
+    return date_time_obj.strftime("%Y-%m-%d %H:%M:%S")
+
+def sum_infos(info_list: list):
+    """generate a list of all strings in info_list, seperated by |
+
+    Args:
+        info_list (list): list of information to concatenate to a string
+
+    Returns:
+        str: string of all concatenated information
+    """
+    all_infos = ''
+    for info in info_list:
+        all_infos += info + '|'
+    return all_infos[:(len(all_infos)-1)]

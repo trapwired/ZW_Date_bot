@@ -35,6 +35,8 @@ class ZWTelegramBot(object):
         self.api_config = api_config
         self.maintainer_chat_id = int(self.api_config["API"]["maintainer_chat_id"])
         self.group_chat_id = self.api_config["API"]["group_chat_id"]
+        self.admin_chat_ids = self.init_admin_chat_ids(self.api_config["API"]["admin_chat_ids"])
+        self.add_infos_dict = dict()        # dict from chat_id to list: [dateTime, Place, Opponent]
         
         # initialize logger 
         self.logger = _logger
@@ -133,6 +135,19 @@ class ZWTelegramBot(object):
         for user_id in user_list_split:
             user_whitelist.append(user_id)
         return user_whitelist
+    
+    
+    def init_admin_chat_ids(self, admin_chat_id: str):
+        """load the admin_chat_ids saved in api_config to list for faster access
+
+        Returns:
+            list: A List containing all chat id's allowed to exchange admin-messages with the bot
+        """
+        admin_chat_list = []
+        admin_chat_id_split = admin_chat_id.split(',')
+        for admin_id in admin_chat_id_split:
+            admin_chat_list.append(int(admin_id))
+        return admin_chat_list
 
 
     def handle(self, msg: dict):
@@ -149,6 +164,8 @@ class ZWTelegramBot(object):
 
             # private chat reply
             if chat_type == 'private':
+                # chat_id allowed to use admin-commands: 
+                isAdmin = chat_id in self.admin_chat_ids
 
                 try:
                     # Access first and last name, check if exists to avoid dict-key error
@@ -169,10 +186,100 @@ class ZWTelegramBot(object):
                         # player was already chatting with bot
                         if chat_id in self.state_map:
 
-                            # State: default, all commands can be executed
-                            if self.state_map[chat_id] < 0:
+                            # State: adding game
+                            if self.state_map[chat_id] < -1:
+                                if command == '/cancel':
+                                    reply_text = self.get_reply_text('continue later', first_name=first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
+                                    self.update_state_map(chat_id, -1)
+                                    self.add_infos_dict[chat_id] = []
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                else:
+                                    # State: adding event, stage 1, WHAT
+                                    if self.state_map[chat_id] == -2:
+                                        # command is either 'Handball Game' or 'Timekeeper Event'
+                                        reply_text = self.get_reply_text('when', first_name)
+                                        reply_keyboard = self.get_keyboard('remove', chat_id)
+                                        if command == 'handball game':
+                                            # send WHEN? state = -3
+                                            self.update_state_map(chat_id, -3)
+                                        elif command == 'timekeeper event':
+                                            # send WHEN state = -4
+                                            self.update_state_map(chat_id, -10)
+                                        elif command == '/cancel':
+                                            reply_text = self.get_reply_text('continue later')
+                                            reply_keyboard = self.get_keyboard('default', chat_id, isAdmin)
+                                            self.update_state_map(chat_id, -1)
+                                        else:
+                                            # try again, ignore, state stays at -2
+                                            return
+                                        self.add_infos_dict[chat_id] = []
+                                        self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-                                if command == '/edit_games':
+                                    # State: adding Handball Game, stage 2, WHEN
+                                    elif self.state_map[chat_id] == -3:
+                                        try:
+                                            date_time = util.parse_user_dateTime(command)
+                                        except:
+                                            # send same again, remind of format
+                                            reply_text = self.get_reply_text('when_fail')
+                                        else:
+                                            # save date_time, send against who?
+                                            self.add_infos_dict[chat_id].append(date_time)
+                                            reply_text = self.get_reply_text('where')
+                                            self.update_state_map(chat_id, -4)
+                                        finally:
+                                            self.bot.sendMessage(chat_id, reply_text)
+
+                                    # State: adding Handball Game, stage 3, WHERE 
+                                    elif self.state_map[chat_id] == -4:
+                                        # save WHERE in add_infos_dict
+                                        self.add_infos_dict[chat_id].append(command)
+                                        reply_text = self.get_reply_text('opponent', first_name=first_name)
+                                        self.update_state_map(chat_id, -5)
+                                        self.bot.sendMessage(chat_id, reply_text)
+
+                                    # State: adding Handball Game, state 4, OPPONENT
+                                    elif self.state_map[chat_id] == -5:
+                                        # save OPPONENT in add_infos_dict
+                                        self.add_infos_dict[chat_id].append(command)
+                                        all_infos = util.sum_infos(self.add_infos_dict[chat_id])
+                                        reply_text = f"Ok, is this correct: {all_infos}"
+                                        reply_keyboard = self.get_keyboard('ok_or_cancel', chat_id)
+                                        self.update_state_map(chat_id, -6)
+                                        self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                                    # State: adding Handball Game, state 5, ZF OK
+                                    elif self.state_map[chat_id] == -6:
+                                        if command == '/ok':
+                                            self.logger.info('We need to add game to database with infos stored in self.add_info_dict[chat_id]')
+
+                                    # State: adding Timekeeper Event, stage 2, WHEN
+                                    elif self.state_map[chat_id] == -10:
+                                        try:
+                                            date_time = util.parse_user_dateTime(command)
+                                        except:
+                                            # send same again, remind of format
+                                            reply_text = self.get_reply_text('when_fail')
+                                        else:
+                                            # save date_time, send against who?
+                                            self.add_infos_dict[chat_id].append(date_time)
+                                            reply_text = self.get_reply_text('where')
+                                            self.update_state_map(chat_id, -11)
+                                        finally:
+                                            self.bot.sendMessage(chat_id, reply_text)
+
+                            # State: default, all commands can be executed
+                            elif self.state_map[chat_id] == -1:
+
+                                if command == '/add' and isAdmin:
+                                    self.logger.info('got /add')
+                                    reply_text = self.get_reply_text('add', first_name)
+                                    reply_keyboard = self.get_keyboard('add', chat_id)
+                                    self.update_state_map(chat_id, -2)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                
+                                elif command == '/edit_games':
                                     self.update_state_map(chat_id, 0)
                                     # Assemble reply
                                     reply_text = self.get_reply_text('edit_games', first_name)
@@ -182,14 +289,14 @@ class ZWTelegramBot(object):
                                         self.update_state_map(chat_id, -1)
                                         # Assemble reply
                                         reply_text = self.get_reply_text('overview_no_games', first_name)
-                                        reply_keyboard = self.get_keyboard('default', first_name)
+                                        reply_keyboard = self.get_keyboard('default', first_name, isAdmin=isAdmin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard, parse_mode= 'MarkdownV2')
                             
                                 elif command == '/help':
                                     self.update_state_map(chat_id,-1)
                                     # Assemble reply
-                                    reply_text = self.get_reply_text('help', first_name)
-                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    reply_text = self.get_reply_text('help', first_name, isAdmin=isAdmin)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
                                 elif command == '/hi' or command == 'hi':
@@ -200,7 +307,7 @@ class ZWTelegramBot(object):
                                 elif command == '/start':
                                     # Assemble reply
                                     reply_text = self.get_reply_text('start', first_name)
-                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
                                 elif command == '/stats':
@@ -215,7 +322,7 @@ class ZWTelegramBot(object):
                                     self.update_state_map(chat_id,-1)
                                     # Assemble reply
                                     reply_text = self.get_reply_text('continue later', first_name)
-                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                 
                                 else:
@@ -254,7 +361,7 @@ class ZWTelegramBot(object):
                                     self.update_state_map(chat_id,-1)
                                     # Assemble reply
                                     reply_text = self.get_reply_text('continue later', first_name)
-                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                 else:
                                     self.update_state_map(chat_id, -1)
@@ -272,7 +379,7 @@ class ZWTelegramBot(object):
                                     self.state_map[chat_id] = -1 
                                     # send reply
                                     reply_text = self.get_reply_text('start')
-                                    reply_keyboard = self.get_keyboard('default', chat_id)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                             else:
                                 reply_text = self.get_reply_text('init')
@@ -290,7 +397,7 @@ class ZWTelegramBot(object):
                     self.bot.sendMessage(self.maintainer_chat_id, f"Error in executing the following query:\n{nuException}")
                     # Assemble reply, notify user an error occured
                     reply_text = self.get_reply_text('error', first_name)
-                    reply_keyboard = self.get_keyboard('default', chat_id)
+                    reply_keyboard = self.get_keyboard('default', chat_id, isAdmin=isAdmin)
                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
 
@@ -359,20 +466,27 @@ class ZWTelegramBot(object):
         self.logger.info("Bot started")
 
     
-    def get_reply_text(self, kind: str, first_name: str = None):
+    def get_reply_text(self, kind: str, first_name: str = None, isAdmin: bool = False):
         """Send approriate reply text
 
         Args:
             kind (str): which kind of reply, acts as switch value
             first_name (str, optional): for personalized messages, use first_name. Defaults to None.
+            isAdmin (bool, optional): is the person admin? (more possible commands)
 
         Returns:
             str:  a string containing the approriate reply
         """        
 
         reply = ''
-        if kind == 'help':
-            reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n"
+        if kind == 'add':
+            reply = f"Let's add a new event: is it a Handball-Game or a Timekeeper-Event?\nYou can write /cancel to cancel the process any time."
+        
+        elif kind == 'help':
+            if isAdmin:
+                reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n/add: add new game or Timekeeper event"
+            else:
+                reply = f"Hi {first_name} - here are my available commands\n/edit_games: lets you edit your games\n/help: shows the list of available commands\n/stats: shows the status for our next game\n"
 
         elif kind == 'init':
             reply = f"Please try again by clicking on /start"
@@ -392,6 +506,9 @@ class ZWTelegramBot(object):
         elif kind == 'overview_no_games':
             reply = 'There are no upcoming games'
 
+        elif kind == 'opponent':
+            reply = f"Great, against whom will we play?\n(write /cancel to cancel the process)"
+
         elif kind == 'start':
             reply = f"Hi {first_name}! \nI am the Züri West Manager \nBelow you see the available commands \nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games"
 
@@ -404,16 +521,26 @@ class ZWTelegramBot(object):
         elif kind == 'selection':
             reply = 'Will you be there (YES), be absent (NO) or are not sure yet (UNSURE)?'
 
+        elif kind == 'when':
+            reply = 'Please indicate WHEN the event will take place\nDo this in the following format:\n01.01.2020 20:30\n(write /cancel to cancel the process)'
+
+        elif kind == 'when_fail':
+            reply = 'Try again, the format did not match.\nTry the following format:\n01.01.2020 20:30\n(write /cancel to cancel the process)'
+
+        elif kind == 'where':
+            reply = 'Fantastic, WHERE will the event be?\n(write /cancel to cancel the process)'
+
         return reply
 
 
-    def get_keyboard(self, kind: str, chat_id: int, button_list: list = None):
+    def get_keyboard(self, kind: str, chat_id: int, button_list: list = None, isAdmin: bool = False):
         """Get appropriate ReplyKeyboardMarkup
 
         Args:
             kind (str): which keyboard, acts as switch value
             chat_id (int): Telegram chat_id of the user the reply is sent to
             button_list (list, optional): [description]. Defaults to None.
+            isAdmin (bool, optional): is the person admin? (more possible commands)
 
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
@@ -423,10 +550,19 @@ class ZWTelegramBot(object):
         """        
 
         keyboard = None
-        if kind == 'default':
-            keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games']], resize_keyboard=True)
+        if kind == 'add':
+            keyboard = ReplyKeyboardMarkup(keyboard=[['Handball Game'], ['Timekeeper Event'], ['/cancel']], resize_keyboard=True)
+
+        elif kind == 'default':
+            if isAdmin:
+                keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games', '/add']], resize_keyboard=True)
+            else:
+                keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games']], resize_keyboard=True)
         elif kind == 'init':
             keyboard = ReplyKeyboardMarkup(keyboard=[['/start']], resize_keyboard=True)
+
+        elif kind == 'ok_or_cancel':
+            keyboard = ReplyKeyboardMarkup(keyboard=[['/ok', '/cancel']], resize_keyboard=True)
         elif kind == 'overview':
             try:
                 buttons = self.database_handler.get_games_list_with_status(chat_id)
