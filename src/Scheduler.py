@@ -26,7 +26,7 @@ class SchedulerHandler(object):
         # initialize fields
         self.bot = bot
         self.group_id = config['API']['group_chat_id']
-        self.admin_chat_id = config['API']['admin_chat_id']
+        self.maintainer_chat_id = config['API']['maintainer_chat_id']
         self.database_handler = db_handler
         self.logger = _logger
 
@@ -40,7 +40,7 @@ class SchedulerHandler(object):
     def send_reboot_failure(self):
         """send a message to the admin that reboot has failed
         """
-        self.bot.sendMessage(self.admin_chat_id, 'ERROR - Bot restart failed)')
+        self.bot.sendMessage(self.maintainer_chat_id, 'ERROR - Bot restart failed)')
 
 
     def load_schedules(self):
@@ -58,7 +58,7 @@ class SchedulerHandler(object):
 
             player_to_messages_map = dict()
         except NotifyAdminException:
-            self.bot.sendMessage(self.admin_chat_id, 'Getting the 5 days game did not work, no schedules set for today')
+            self.bot.sendMessage(self.maintainer_chat_id, 'Getting the 5 days game did not work, no schedules set for today')
         else:
             # loop over games_lists, append all unsure players to player_to_messages_map
             for (game_info_list, unsure_players_list) in five_days_games_list:

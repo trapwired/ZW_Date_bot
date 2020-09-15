@@ -19,7 +19,7 @@ class DatabaseHandler(object):
         Args:
             bot (telepot.Bot): main bot, used to send messages to admin in case of error
             config (configparser.RawConfigParser): provides credentials for database connection
-            api_config (configparser.RawConfigParser): provides admin_chat_id
+            api_config (configparser.RawConfigParser): provides maintainer_chat_id
             _logger (logging.Logger): logger instance, the same over all modules, log to same file
 
         Raises:
@@ -30,7 +30,7 @@ class DatabaseHandler(object):
         self.config = config
         self.logger = _logger
         self.bot = bot
-        self.admin_chat_id = api_config['API']['admin_chat_id']
+        self.maintainer_chat_id = api_config['API']['maintainer_chat_id']
 
         # Connect to MariaDB Platform
         try:
@@ -63,7 +63,7 @@ class DatabaseHandler(object):
             self.cursor.execute('SET SESSION interactive_timeout=86400;')
         except:
             self.logger.warning(f"session parameters (timeouts) not set!", exc_info=True)
-            self.bot.sendMessage(self.admin_chat_id, 'Session parameters not set, will timeout in 8 hours')
+            self.bot.sendMessage(self.maintainer_chat_id, 'Session parameters not set, will timeout in 8 hours')
  
         # build player dictionary for faster access of all player chat_id's
         self.player_chat_id_dict = self.init_player_chat_id_dict()
@@ -71,7 +71,7 @@ class DatabaseHandler(object):
 
     def execute_mysql_without_result(self, mysql_statement: str, numberOfTries: int):
         """Execute the mysql query given in mysql_statement - if it fails, it invokes itself with numberOfTries incremented by one
-        if numberOfTries exceeds 2, an error is sent to admin_chat_id
+        if numberOfTries exceeds 2, an error is sent to maintainer_chat_id
 
         Args:
             mysql_statement (str): a string containing the mysql query to execute on the database
@@ -104,7 +104,7 @@ class DatabaseHandler(object):
 
     def execute_mysql_with_result(self, mysql_statement: str, numberOfTries: int):
         """executes the mysql query given in mysql_statement - if it fails, it invokes itself with numberOfTries incremented by one
-        if numberOfTries exceeds 2, an error is sent to admin_chat_id
+        if numberOfTries exceeds 2, an error is sent to maintainer_chat_id
 
         Args:
             mysql_statement (str): a string containing the mysql query to execute on the database
@@ -150,7 +150,7 @@ class DatabaseHandler(object):
             mysql_statement = "SELECT ID, State FROM Players;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
-            self.bot.sendMessage(self.admin_chat_id, f"Initialization of State Map failed\BOT NOT RUNNING")
+            self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of State Map failed\BOT NOT RUNNING")
             sys.exit(1)
         else:
             for (ID, State) in self.cursor:
@@ -169,7 +169,7 @@ class DatabaseHandler(object):
         try:
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
-            self.bot.sendMessage(self.admin_chat_id, f"Initialization of Player to chat_id dictionary failed\BOT NOT RUNNING")
+            self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of Player to chat_id dictionary failed\BOT NOT RUNNING")
             sys.exit(1)
         else:
             player_dict = dict()
@@ -233,7 +233,7 @@ class DatabaseHandler(object):
 
         if lastname == ' No Name Given' or firstname == ' No Name Given':
             # send message to admin indicating that no first/lastname is given 
-            self.bot.sendMessage(self.admin_chat_id, f"remember to manually update the name of {firstname} {lastname}")
+            self.bot.sendMessage(self.maintainer_chat_id, f"remember to manually update the name of {firstname} {lastname}")
 
         try:
             # insert new player row into Players-Table

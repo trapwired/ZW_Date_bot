@@ -25,7 +25,7 @@ class ZWTelegramBot(object):
 
         Args:
             config (configparser.RawConfigParser): configuration file for bot
-            api_config (configparser.RawConfigParser): configuration file with secrets (Bot Token, admin_chat_id)
+            api_config (configparser.RawConfigParser): configuration file with secrets (Bot Token, maintainer_chat_id)
             db_config (configparser.RawConfigParser): configuration file for database handler
             _logger (logging.Logger): logger instance, will be passed to databaseHandler and scheduleHandler -> one logger for all classes
         """        
@@ -33,7 +33,7 @@ class ZWTelegramBot(object):
         # initialize fields
         self.config = config
         self.api_config = api_config
-        self.admin_chat_id = int(self.api_config["API"]["admin_chat_id"])
+        self.maintainer_chat_id = int(self.api_config["API"]["maintainer_chat_id"])
         self.group_chat_id = self.api_config["API"]["group_chat_id"]
         
         # initialize logger 
@@ -45,7 +45,7 @@ class ZWTelegramBot(object):
         self.bot = telepot.Bot(self.api_config["API"]["key"])
 
         # start DataBase Handler
-        self.database_handler = self.init_databaseHandler(self.bot, db_config, api_config, _logger, self.admin_chat_id)
+        self.database_handler = self.init_databaseHandler(self.bot, db_config, api_config, _logger, self.maintainer_chat_id)
 
         # initialize lists / dicts
         self.user_whitelist = self.init_user_whitelist()
@@ -57,7 +57,7 @@ class ZWTelegramBot(object):
         self.scheduler_handler.send_stats_to_group_chat(self.send_stats_to_group_chat)
 
         # testing - TO DELETE
-        info = self.bot.sendMessage(self.admin_chat_id, 'testing custom keyboard', reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+        info = self.bot.sendMessage(self.maintainer_chat_id, 'testing custom keyboard', reply_markup = InlineKeyboardMarkup(inline_keyboard=[
                                     [InlineKeyboardButton(text="One",callback_data='1'),InlineKeyboardButton(text="Two",callback_data='2'), InlineKeyboardButton(text="Three",callback_data='3')],
                                 ]
                             ))
@@ -71,7 +71,7 @@ class ZWTelegramBot(object):
             # get all unsure players and their respective games (they are unsure at)
             player_to_messages_map = self.scheduler_handler.load_schedules()
         except NotifyAdminException as err:
-            self.bot.sendMessage(self.admin_chat_id, f"loading schedules did not succeed - no scheduled messages today\n{err}")
+            self.bot.sendMessage(self.maintainer_chat_id, f"loading schedules did not succeed - no scheduled messages today\n{err}")
         else:
             # loop through all pairs of players and game-strings
             for player_chat_id, games in player_to_messages_map.items():
@@ -90,15 +90,15 @@ class ZWTelegramBot(object):
                 self.update_state_map(player_chat_id, 0)
                 
 
-    def init_databaseHandler(self, bot: telepot.Bot, db_config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, _logger: logging.Logger, admin_chat_id: int):
+    def init_databaseHandler(self, bot: telepot.Bot, db_config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, _logger: logging.Logger, maintainer_chat_id: int):
         """initialize the DataBase Handler, retry 10 times on error, notify administrator otherwise and exit
 
         Args:
             bot (telepot.Bot): bot, used to notify the admin
             db_config (configparser.RawConfigParser):  provides the login credentials to the database
-            api_config (configparser.RawConfigParser): provides the admin_chat_id
+            api_config (configparser.RawConfigParser): provides the maintainer_chat_id
             _logger (logging.Logger): provides the logging facilities
-            admin_chat_id (int): provide the admin_chat_id to the bot 
+            maintainer_chat_id (int): provide the maintainer_chat_id to the bot 
 
         Returns:
             DatabaseHandler: correctly initialized database Handler
@@ -113,10 +113,10 @@ class ZWTelegramBot(object):
                 time.sleep(1)
                 count += 1
                 if count > 9:
-                    bot.sendMessage(admin_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
+                    bot.sendMessage(maintainer_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
                     sys.exit(1)
             except NotifyAdminException as err:
-                bot.sendMessage(admin_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
+                bot.sendMessage(maintainer_chat_id, f"ERROR: starting DB - BOT NOT RUNNING{err}")
         return database_handler
 
 
@@ -287,7 +287,7 @@ class ZWTelegramBot(object):
                     # something went wrong
                     self.update_state_map(chat_id, -1)
                     # send error to admin
-                    self.bot.sendMessage(self.admin_chat_id, f"Error in executing the following query:\n{nuException}")
+                    self.bot.sendMessage(self.maintainer_chat_id, f"Error in executing the following query:\n{nuException}")
                     # Assemble reply, notify user an error occured
                     reply_text = self.get_reply_text('error', first_name)
                     reply_keyboard = self.get_keyboard('default', chat_id)
@@ -311,7 +311,7 @@ class ZWTelegramBot(object):
                         self.logger.info(f"Got {content_type} from Group-chat ({chat_id})")
 
                 except (NotifyUserException, NotifyAdminException) as nuException:
-                    self.bot.sendMessage(self.admin_chat_id, f"Error in executing the following query:\n{nuException}")
+                    self.bot.sendMessage(self.maintainer_chat_id, f"Error in executing the following query:\n{nuException}")
 
 
         # user not in whitelist
@@ -542,7 +542,7 @@ if __name__ == "__main__":
 
     """
     send inline button to handball.ch website
-        self.bot.sendMessage(self.admin_chat_id, 'Handball.ch Website', reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+        self.bot.sendMessage(self.maintainer_chat_id, 'Handball.ch Website', reply_markup = InlineKeyboardMarkup(inline_keyboard=[
                                    [InlineKeyboardButton(text="handball.ch/Züri West 1",url='https://www.handball.ch/de/matchcenter/teams/32010')]
                                 ]
                             ))
