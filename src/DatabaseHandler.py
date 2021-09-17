@@ -5,10 +5,13 @@ import os
 import logging 
 import datetime
 import time
+import re
 import telepot
 
 import utility as util
 from exceptions import NotifyUserException, NotifyAdminException
+from PlayerState import PlayerState
+from StateObject import StateObject
 
 
 class DatabaseHandler(object):
@@ -139,7 +142,7 @@ class DatabaseHandler(object):
 
     def init_state_map(self):
         """initialize the state_map dictionary from DataBase 
-        -1: Start, 0 = Overview, any other positive number: represents game is beeing edited (from chat_id to int)
+        see State.py for translation
 
         Returns:
             dict(): a dictionary mapping from chat_id to state 
@@ -153,8 +156,9 @@ class DatabaseHandler(object):
             self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of State Map failed\BOT NOT RUNNING")
             sys.exit(1)
         else:
-            for (ID, State) in self.cursor:
-                state_map[ID] = State
+            for (ID, State) in cursor:
+                state_map[ID] = StateObject(State)
+            self.logger.info(state_map)
             return state_map
 
 
@@ -238,7 +242,7 @@ class DatabaseHandler(object):
         try:
             # insert new player row into Players-Table
             new_column_name = f"p{chat_id}"
-            mysql_statement = f"INSERT INTO Players(ID, FirstName, LastName, State) VALUES({chat_id},'{firstname}','{lastname}', -1);"
+            mysql_statement = f"INSERT INTO Players(ID, FirstName, LastName, State) VALUES({chat_id},'{firstname}','{lastname}', {PlayerState.DEFAULT.value});"
             self.execute_mysql_without_result(mysql_statement, 0)
 
             # insert new column into Games-Table
@@ -423,28 +427,31 @@ class DatabaseHandler(object):
         Returns:
             int: ID of game in DataBase.Games
         """
+        regex = '(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \|)'
+        if re.match(regex, game):
+            # reverse lookup in self.id_to_game dict
+            for key, value in self.id_to_game.items():
+                if game[:16] in value:
+                    return key
 
-        # reverse lookup in self.id_to_game dict
-        for key, value in self.id_to_game.items():
-            if game in value:
-                return key
-
-        # if not found in dict: look up in Database
-        try:
-            dateTime = util.game_string_to_datetime(game)
-        except:
-            return -1
-        else:
-            mysql_statement = f" SELECT ID FROM Games WHERE DateTime = '{dateTime}';"
+            # if not found in dict: look up in Database
             try:
-                cursor = self.execute_mysql_with_result(mysql_statement, 0)
-            except NotifyUserException:
-                raise NotifyAdminException
+                dateTime = util.game_string_to_datetime(game[:16])
+            except:
+                return -1
             else:
-                return_row = cursor.fetchone()
-                game_id = return_row[0]
-                self.id_to_game[game_id] = game
-                return game_id
+                mysql_statement = f" SELECT ID FROM Games WHERE DateTime = '{dateTime}';"
+                try:
+                    cursor = self.execute_mysql_with_result(mysql_statement, 0)
+                except NotifyUserException:
+                    raise NotifyAdminException
+                else:
+                    return_row = cursor.fetchone()
+                    game_id = return_row[0]
+                    self.id_to_game[game_id] = game
+                    return game_id
+        else:
+            return -1
 
 
     def edit_game_attendance(self, game_id: int, new_status: str, chat_id: int):
@@ -468,18 +475,18 @@ class DatabaseHandler(object):
             raise NotifyUserException
 
 
-    def update_state(self, chat_id: int, new_state: int):
+    def update_state(self, chat_id: int, new_state: PlayerState):
         """update the state of a player in the database
 
         Args:
             chat_id (int): chat_id of player to change state
-            new_state (int): new state to change to
+            new_state (PlayerState): new state to change to
 
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
         """        
 
-        mysql_statement = f"UPDATE Players SET State = {new_state} WHERE ID = {chat_id};"
+        mysql_statement = f"UPDATE Players SET State = {new_state.value} WHERE ID = {chat_id};"
         try:
             self.execute_mysql_without_result(mysql_statement, 0)
         except NotifyUserException:
