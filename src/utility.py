@@ -1,7 +1,6 @@
 from datetime import datetime
 import logging
 
-
 # Final List of the possibilities for game attendance
 ATTENDANCE = ['UNSURE', 'YES', 'NO']
 
@@ -113,8 +112,25 @@ def pretty_print_game(DateTime: datetime, place: str, status: int = None):
         pretty_status = f"({translate_status_from_int(status)})"
         pretty_dateTime = make_datetime_pretty(DateTime)
         return f"{pretty_dateTime} | {place} | {pretty_status}"
-        
-    
+
+
+def pretty_print_game_from_list(values: list):
+    """pretty print game infos from list with unknown amount of colums
+
+    Args:
+        values (list): a list containing one row of the Games table
+
+    Returns:
+        str: pretty-printed game with short summary on attendance
+    """
+    attendance = [0, 0, 0]
+    for value in values[4:]:
+        attendance[int(value)] += 1
+    pretty_summary = f"{attendance[1]}Y / {attendance[2]}N / {attendance[0]}U"
+    pretty_datetime = make_datetime_pretty(values[1])
+    return f"{pretty_datetime} | {values[2]} | {pretty_summary}"
+
+
 def is_member_of_group(status: str):
     """check, whether a given status indicates group-association
 
@@ -151,11 +167,11 @@ def write_whitelist_to_file(user_whitelist: list):
                 for user_id in user_whitelist:
                     new_line += f"{str(user_id).strip()}, "
                 # get rid of last comma
-                new_line = new_line[:len(new_line)-2] + '\n'
+                new_line = new_line[:len(new_line) - 2] + '\n'
             file.write(new_line)
         # save new file (size)
         file.truncate()
-                
+
 
 def game_string_to_datetime(game: str):
     """convert a pretty-printed game-string back to a DateTime Object
@@ -166,7 +182,7 @@ def game_string_to_datetime(game: str):
     Returns:
         str: String of game in format 2020-09-12 12:30:00
     """
-    
+
     date_time_obj = datetime.strptime(game, "%d.%m.%Y %H:%M")
     return str(date_time_obj.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -183,6 +199,7 @@ def parse_user_dateTime(dateTime: str):
     date_time_obj = datetime.strptime(dateTime, "%d.%m.%Y %H:%M")
     return date_time_obj.strftime("%Y-%m-%d %H:%M:%S")
 
+
 def sum_infos(info_list: list):
     """generate a list of all strings in info_list, seperated by |
 
@@ -195,4 +212,4 @@ def sum_infos(info_list: list):
     all_infos = ''
     for info in info_list:
         all_infos += info + '|'
-    return all_infos[:(len(all_infos)-1)]
+    return all_infos[:(len(all_infos) - 1)]

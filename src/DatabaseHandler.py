@@ -2,7 +2,7 @@ import mariadb
 import sys
 import configparser
 import os
-import logging 
+import logging
 import datetime
 import time
 import re
@@ -16,7 +16,8 @@ from StateObject import StateObject
 
 class DatabaseHandler(object):
 
-    def __init__(self, bot: telepot.Bot, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser, _logger: logging.Logger):
+    def __init__(self, bot: telepot.Bot, config: configparser.RawConfigParser, api_config: configparser.RawConfigParser,
+                 _logger: logging.Logger):
         """initialize the DataBase Handler: establish connection to local database, set connection parameters, build player dictionary  for faster access
 
         Args:
@@ -34,6 +35,7 @@ class DatabaseHandler(object):
         self.logger = _logger
         self.bot = bot
         self.maintainer_chat_id = api_config['API']['maintainer_chat_id']
+        self.group_chat_id = api_config['API']['group_chat_id']
 
         # Connect to MariaDB Platform
         try:
@@ -48,10 +50,10 @@ class DatabaseHandler(object):
         except mariadb.Error as e:
             self.logger.error(f"Error connecting to MariaDB Platform: {e}")
             raise NotifyAdminException(e)
-        except :
+        except:
             self.logger.error("Error in DB-Init", exc_info=True)
             raise NotifyAdminException
-    
+
         # Get Cursor and Connection
         self.cursor = connection.cursor()
         self.connection = connection
@@ -67,10 +69,9 @@ class DatabaseHandler(object):
         except:
             self.logger.warning(f"session parameters (timeouts) not set!", exc_info=True)
             self.bot.sendMessage(self.maintainer_chat_id, 'Session parameters not set, will timeout in 8 hours')
- 
+
         # build player dictionary for faster access of all player chat_id's
         self.player_chat_id_dict = self.init_player_chat_id_dict()
-
 
     def execute_mysql_without_result(self, mysql_statement: str, numberOfTries: int):
         """Execute the mysql query given in mysql_statement - if it fails, it invokes itself with numberOfTries incremented by one
@@ -82,9 +83,9 @@ class DatabaseHandler(object):
 
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
-        """     
+        """
 
-         # raise NotifyUserException if unsuccesfully tried to execute statement 3 times
+        # raise NotifyUserException if unsuccesfully tried to execute statement 3 times
         if numberOfTries > 2:
             raise NotifyUserException(mysql_statement)
         try:
@@ -104,7 +105,6 @@ class DatabaseHandler(object):
         numberOfTries += 1
         self.execute_mysql_without_result(mysql_statement, numberOfTries)
 
-
     def execute_mysql_with_result(self, mysql_statement: str, numberOfTries: int):
         """executes the mysql query given in mysql_statement - if it fails, it invokes itself with numberOfTries incremented by one
         if numberOfTries exceeds 2, an error is sent to maintainer_chat_id
@@ -118,7 +118,7 @@ class DatabaseHandler(object):
 
         Returns:
             mariadb.connection.cursor: the cursor object containing the database response
-        """        
+        """
 
         # raise NotifyUserException if unsuccesfully tried to execute statement 3 times
         if numberOfTries > 2:
@@ -139,14 +139,13 @@ class DatabaseHandler(object):
         numberOfTries += 1
         return self.execute_mysql_with_result(mysql_statement, numberOfTries)
 
-
     def init_state_map(self):
         """initialize the state_map dictionary from DataBase 
         see State.py for translation
 
         Returns:
             dict(): a dictionary mapping from chat_id to state 
-        """        
+        """
 
         state_map = dict()
         try:
@@ -158,9 +157,8 @@ class DatabaseHandler(object):
         else:
             for (ID, State) in cursor:
                 state_map[ID] = StateObject(State)
-            self.logger.info(state_map)
+            # self.logger.info(state_map)
             return state_map
-
 
     def init_player_chat_id_dict(self):
         """get all player id's and names from the Database for faster access in queries involving chat_id's
@@ -173,7 +171,8 @@ class DatabaseHandler(object):
         try:
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
-            self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of Player to chat_id dictionary failed\BOT NOT RUNNING")
+            self.bot.sendMessage(self.maintainer_chat_id,
+                                 f"Initialization of Player to chat_id dictionary failed\BOT NOT RUNNING")
             sys.exit(1)
         else:
             player_dict = dict()
@@ -181,7 +180,6 @@ class DatabaseHandler(object):
                 # store Max M. for fast pretty printing status
                 player_dict[ID] = f"{FirstName} {LastName[:1]}\\."
             return player_dict
-
 
     def get_games_in_exactly_x_days(self, x: int):
         """Query the Database to get all games taking place in exactly x days
@@ -222,7 +220,6 @@ class DatabaseHandler(object):
                 result_tuple_list.append((game_info, unsure_chat_id_list))
             return result_tuple_list
 
-
     def insert_new_player(self, chat_id: int, firstname: str, lastname: str):
         """Add a new player to the database: add a new line to the Player-Table, add a new column to the Games-Table (col-name: f"p{chat_id}), add the player to the python-state-map§
 
@@ -237,7 +234,8 @@ class DatabaseHandler(object):
 
         if lastname == ' No Name Given' or firstname == ' No Name Given':
             # send message to admin indicating that no first/lastname is given 
-            self.bot.sendMessage(self.maintainer_chat_id, f"remember to manually update the name of {firstname} {lastname}")
+            self.bot.sendMessage(self.maintainer_chat_id,
+                                 f"remember to manually update the name of {firstname} {lastname}")
 
         try:
             # insert new player row into Players-Table
@@ -254,7 +252,6 @@ class DatabaseHandler(object):
 
         except NotifyUserException:
             raise NotifyUserException
-        
 
     def player_present(self, chat_id: int):
         """check and return if a player is already in the database
@@ -278,7 +275,34 @@ class DatabaseHandler(object):
             cursor.fetchall()
             return cursor.rowcount > 0
 
-    
+    def get_games_list_with_status_summary(self):
+        """Assemble a list of all future games including the current status of the player with chat_id
+
+        Args:
+            chat_id (int): the chat_id of the player to get the list for (and status)
+
+        Raises:
+            NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
+
+        Returns:
+            [[]]: a list of lists containing the infos for each game
+        """
+
+        # get ordered list of games in the future
+        button_list = []
+        # make sure to have 'continue later' at top of button_list
+        button_list.append(['continue later'])
+        try:
+            mysql_statement = f"SELECT * FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
+            cursor = self.execute_mysql_with_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+        else:
+            # pretty print columns, add to buttons
+            for values_list in cursor:
+                button_list.append([util.pretty_print_game_from_list(values_list)])
+            return button_list
+
     def get_games_list_with_status(self, chat_id: int):
         """Assemble a list of all future games including the current status of the player with chat_id
 
@@ -306,11 +330,10 @@ class DatabaseHandler(object):
             # pretty print columns, add to buttons
             for (ID, DateTime, Place, player_col) in cursor:
                 button_list.append([util.pretty_print_game(DateTime, Place, player_col)])
-                if ID not in self.id_to_game: 
+                if ID not in self.id_to_game:
                     self.id_to_game[ID] = f"{util.make_datetime_pretty(DateTime)}"
             return button_list
 
-    
     def get_player_columns(self):
         """used by DataBase Handler to get a list of all players and all player-columns (p...) in the same order
 
@@ -325,8 +348,10 @@ class DatabaseHandler(object):
             player_list.append(player_id)
         return (player_columns, player_list)
 
-
     def get_stats_next_game(self):
+        return self.get_stats_game(is_next=True)
+
+    def get_stats_game(self, game_id: int = -1, is_next: bool = False):
         """return the summary for the next game in the future indicating which players will play and which won't
 
         Raises:
@@ -338,7 +363,9 @@ class DatabaseHandler(object):
         (player_columns, player_list) = self.get_player_columns()
 
         try:
-            mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE DateTime > CURRENT_TIMESTAMP() ORDER BY DateTime ASC LIMIT 1;"
+            mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE ID={game_id};"
+            if is_next:
+                mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE DateTime > CURRENT_TIMESTAMP() ORDER BY DateTime ASC LIMIT 1;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
             raise NotifyUserException
@@ -349,7 +376,7 @@ class DatabaseHandler(object):
             yes_list = []
             no_list = []
             unsure_list = []
-            
+
             # first row of result: pretty-printed game_infos
             result = f"{util.make_datetime_pretty_md(return_row[0])} \\| {return_row[1]} \\| {return_row[2]}\n"
             count = 3
@@ -385,7 +412,6 @@ class DatabaseHandler(object):
 
             return result
 
-
     def insert_games(self):
         """Backup of all Games data in case reinsertion into DataBase is needed
 
@@ -406,14 +432,13 @@ class DatabaseHandler(object):
         games.append(['2021-03-13 14:00:00', 'Zürich Utogrund', 'TV Unterstrass'])
         games.append(['2021-03_27 00:00:00', 'TBA', 'HC Dübendorf'])
         games.append(['2021-04-17 14:00:00', 'Zürich Utogrund', 'SC Volketswil'])
-        
+
         try:
             for game in games:
                 mysql_statement = f"INSERT INTO Games(ID, DateTime, Place, Adversary) VALUES('{game[0]}','{game[1]}','{game[2]}');"
-                self.execute_mysql_without_result(mysql_statement, 0)  
+                self.execute_mysql_without_result(mysql_statement, 0)
         except NotifyUserException:
             raise NotifyAdminException
-
 
     def get_game_id(self, game: str):
         """reverse lookup for the date-time-string of a game (i.e. 12.09.2020 12:30) to the ID (unique) in DataBase.Games
@@ -453,7 +478,6 @@ class DatabaseHandler(object):
         else:
             return -1
 
-
     def edit_game_attendance(self, game_id: int, new_status: str, chat_id: int):
         """change the attendance-state for a game for a given player
 
@@ -464,7 +488,7 @@ class DatabaseHandler(object):
 
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
-        """        
+        """
 
         new_status_translated = util.translate_status_from_str(new_status)
         player_column = f"p{chat_id}"
@@ -473,7 +497,6 @@ class DatabaseHandler(object):
             self.execute_mysql_without_result(mysql_statement, 0)
         except NotifyUserException:
             raise NotifyUserException
-
 
     def update_state(self, chat_id: int, new_state: PlayerState):
         """update the state of a player in the database
@@ -484,10 +507,10 @@ class DatabaseHandler(object):
 
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
-        """        
+        """
 
         mysql_statement = f"UPDATE Players SET State = {new_state.value} WHERE ID = {chat_id};"
         try:
             self.execute_mysql_without_result(mysql_statement, 0)
         except NotifyUserException:
-            raise NotifyUserException   
+            raise NotifyUserException

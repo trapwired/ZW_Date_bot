@@ -21,3 +21,5 @@ class PlayerState(Enum):
     EDIT_GAME = 201
 
     OBSERVER = 999
+
+    GROUP_CHAT = -42

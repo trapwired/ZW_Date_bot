@@ -16,7 +16,7 @@ from Scheduler import SchedulerHandler
 from exceptions import NotifyUserException, NotifyAdminException
 from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, \
     InlineKeyboardButton
-
+ 
 
 # static methods
 def get_names(msg: dict):
@@ -94,7 +94,8 @@ class ZWTelegramBot(object):
         self.config = config
         self.api_config = api_config
         self.maintainer_chat_id = int(self.api_config["API"]["maintainer_chat_id"])
-        self.group_chat_id = self.api_config["API"]["group_chat_id"]
+        self.group_chat_id = int(self.api_config["API"]["group_chat_id"])
+        self.group_chat_id2 = int(self.api_config["API"]["group_chat_id2"])
         self.admin_chat_ids = init_admin_chat_ids(self.api_config["API"]["admin_chat_ids"])
         self.add_infos_dict = dict()  # dict from chat_id to list: [dateTime, Place, Opponent]
 
@@ -161,14 +162,13 @@ class ZWTelegramBot(object):
         """
 
         content_type, chat_type, chat_id = telepot.glance(msg)
+        # private chat reply
+        if chat_type == 'private':
 
-        # check if user in self.user_state_map / authorized to use bot
-        if chat_id in self.user_state_map.keys():
+            # check if user in self.user_state_map / authorized to use bot
+            if chat_id in self.user_state_map.keys():
 
-            # private chat reply
-            if chat_type == 'private':
-
-                # chat_id allowed to use admin-commands: 
+                # chat_id allowed to use admin-commands:
                 is_admin = chat_id in self.admin_chat_ids
                 first_name, last_name = get_names(msg)
 
@@ -209,7 +209,7 @@ class ZWTelegramBot(object):
                                 self.update_user_state_map(chat_id, PlayerState.EDIT_CHOOSE_GAME)
                                 # Assemble reply
                                 reply_text = self.get_reply_text('edit_games', first_name)
-                                reply_keyboard = self.get_keyboard('overview', chat_id)
+                                reply_keyboard = self.get_keyboard('overview_edit_games', chat_id)
                                 if reply_keyboard is None:
                                     # there are no games in the future, reset State
                                     self.update_user_state_map(chat_id, PlayerState.DEFAULT)
@@ -230,8 +230,16 @@ class ZWTelegramBot(object):
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                             elif command == '/stats':
                                 # Assemble reply
-                                reply_text = self.get_reply_text('stats', first_name)
-                                self.bot.sendMessage(chat_id, reply_text, parse_mode='MarkdownV2')
+                                self.update_user_state_map(chat_id, PlayerState.GET_STATS)
+                                reply_text = self.get_reply_text('stats_overview', first_name)
+                                reply_keyboard = self.get_keyboard('overview_stats', chat_id)
+                                if reply_keyboard is None:
+                                    # no games in the future
+                                    self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                    reply_text = self.get_reply_text('overview_no_games', first_name)
+                                    reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                     parse_mode='MarkdownV2')
                             elif command == '/website':
                                 # send inline button to handball.ch website
                                 reply_text = self.get_reply_text('website', first_name)
@@ -244,7 +252,27 @@ class ZWTelegramBot(object):
 
                         elif current_state is PlayerState.GET_STATS:
                             # handle getStats
-                            raise NotImplemented
+                            if command == 'continue later':
+                                self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                # Assemble reply
+                                reply_text = self.get_reply_text('continue later', first_name)
+                                reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            else:
+                                game_date = command[:18]
+                                current_game_id = self.database_handler.get_game_id(game_date)
+                                if current_game_id >= 0:
+                                    self.user_state_map[chat_id].game_number = current_game_id
+                                    # assemble reply with select-keyboard
+                                    reply_text = self.get_reply_text('stats',
+                                                                     game_id=self.user_state_map[chat_id].game_number)
+                                    reply_keyboard = self.get_keyboard('overview_stats', chat_id)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                         parse_mode='MarkdownV2')
+                                else:
+                                    # Game not in DataBase, ignore input
+                                    self.logger.warning(f"Game not found, got {command}")
+                                    self.handle_else(msg, chat_id)
 
                         elif current_state.name.startswith('ADD'):
                             self.update_user_state_map(chat_id, PlayerState.DEFAULT)
@@ -337,8 +365,30 @@ class ZWTelegramBot(object):
                     reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
-            # group chat reply
-            elif chat_type in ['group', 'supergroup']:
+            else:
+                # message from user, check if in group
+                chat_member_information = self.bot.getChatMember(self.group_chat_id, chat_id)
+                status_information = chat_member_information['status']
+                is_member = bool(util.is_member_of_group(status_information))
+                if is_member:
+                    # add to whitelist, handle message again
+                    self.user_state_map[int(chat_id)] = StateObject(PlayerState.INIT)
+                    self.handle(msg)
+                    return
+                else:
+                    self.bot.sendMessage(self.maintainer_chat_id,
+                                         f"Unauthorized usage from {chat_id}")
+                    # sender is not authorized to chat with bot
+                    self.logger.info(f"Unauthorized bot usage from {chat_id}")
+                    # Assemble reply
+                    reply_text = self.get_reply_text('no_Association')
+                    self.logger.info('would send not authorized')
+                    self.bot.sendMessage(chat_id, reply_text)
+
+        # group chat reply
+        elif chat_type in ['group', 'supergroup']:
+
+            if chat_id == self.group_chat_id:
                 try:
                     if content_type == 'text':
                         command = msg['text']
@@ -358,28 +408,18 @@ class ZWTelegramBot(object):
                 except (NotifyUserException, NotifyAdminException) as nuException:
                     self.bot.sendMessage(self.maintainer_chat_id,
                                          f"Error in executing the following query:\n{nuException}")
+            else:
+                # bot added to group chat
+                self.bot.sendMessage(self.maintainer_chat_id,
+                                     f"Unauthorized usage from group chat: {chat_id}")
 
-        # user not in whitelist
-        else:
-
-            if chat_id > 0:
-                # message from user, check if in group
-                chat_member_information = self.bot.getChatMember(self.group_chat_id, chat_id)
-                status_information = chat_member_information['status']
-                is_member = bool(util.is_member_of_group(status_information))
-                if is_member:
-                    # add to whitelist, handle message again
-                    self.user_state_map[int(chat_id)] = StateObject(PlayerState.INIT)
-                    self.handle(msg)
-                    return
+        elif chat_type == 'channel':
             self.bot.sendMessage(self.maintainer_chat_id,
-                                 f"Unauthorized usage from {chat_id}")
-            # sender is not authorized to chat with bot
-            self.logger.info(f"Unauthorized bot usage from {chat_id}")
-            # Assemble reply
-            reply_text = self.get_reply_text('no_Association')
-            self.logger.info('would send not authorized')
-            self.bot.sendMessage(chat_id, reply_text)
+                                 f"bot added to channel: {chat_id}")
+
+        else:
+            self.bot.sendMessage(self.maintainer_chat_id,
+                                 f"unknown chat_type {chat_type}")
 
     def handle_else(self, msg: dict, chat_id: int):
         # chat is private and text
@@ -417,10 +457,11 @@ class ZWTelegramBot(object):
         self.bot.message_loop({'chat': self.handle, 'callback_query': self.handle_callback_query})
         self.logger.info("Bot started")
 
-    def get_reply_text(self, kind: str, first_name: str = None, is_admin: bool = False):
+    def get_reply_text(self, kind: str, first_name: str = None, is_admin: bool = False, game_id: int = -1):
         """Send appropriate reply text
 
         Args:
+            game_id: the game id to get the status to
             kind (str): which kind of reply, acts as switch value
             first_name (str, optional): for personalized messages, use first_name. Defaults to None.
             is_admin (bool, optional): is the person admin? (more possible commands)
@@ -478,8 +519,13 @@ class ZWTelegramBot(object):
                     f"\nBelow you see the available commands " \
                     f"\nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games"
 
+        elif kind == 'stats_overview':
+            reply = "Click on the game to get the stats for \\- the summary is of the format: " \
+                    "\n 5 *Y*ES \\- 3 *N*O \\- 4 *U*NSURE " \
+                    "\n*TIPP: the list ist scrollable*"
+
         elif kind == 'stats':
-            reply = self.database_handler.get_stats_next_game()
+            reply = self.database_handler.get_stats_game(game_id)
 
         elif kind == 'continue later':
             reply = f"Cheerio, {first_name}"
@@ -541,9 +587,19 @@ class ZWTelegramBot(object):
 
         elif kind == 'ok_or_cancel':
             keyboard = ReplyKeyboardMarkup(keyboard=[['/ok', '/cancel']], resize_keyboard=True)
-        elif kind == 'overview':
+        elif kind == 'overview_edit_games':
             try:
                 buttons = self.database_handler.get_games_list_with_status(chat_id)
+            except NotifyUserException as nuException:
+                raise NotifyUserException(nuException)
+            else:
+                if len(buttons) < 2:
+                    # there are no games in the future
+                    return None
+                keyboard = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=True)
+        elif kind == 'overview_stats':
+            try:
+                buttons = self.database_handler.get_games_list_with_status_summary()
             except NotifyUserException as nuException:
                 raise NotifyUserException(nuException)
             else:
