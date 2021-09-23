@@ -12,6 +12,7 @@ import utility as util
 from exceptions import NotifyUserException, NotifyAdminException
 from PlayerState import PlayerState
 from StateObject import StateObject
+from SpectatorState import SpectatorState
 
 
 class DatabaseHandler(object):
@@ -139,7 +140,7 @@ class DatabaseHandler(object):
         numberOfTries += 1
         return self.execute_mysql_with_result(mysql_statement, numberOfTries)
 
-    def init_state_map(self):
+    def init_user_state_map(self):
         """initialize the state_map dictionary from DataBase 
         see State.py for translation
 
@@ -152,11 +153,33 @@ class DatabaseHandler(object):
             mysql_statement = "SELECT ID, State FROM Players;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
-            self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of State Map failed\BOT NOT RUNNING")
+            self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of Player State Map failed\BOT NOT RUNNING")
             sys.exit(1)
         else:
             for (ID, State) in cursor:
                 state_map[ID] = StateObject(State)
+            # self.logger.info(state_map)
+            return state_map
+
+    def init_spectator_state_map(self):
+        """initialize the state_map dictionary from DataBase
+        see State.py for translation
+
+        Returns:
+            dict(): a dictionary mapping from chat_id to state
+        """
+
+        state_map = dict()
+        try:
+            mysql_statement = "SELECT ID, State FROM Spectators;"
+            cursor = self.execute_mysql_with_result(mysql_statement, 0)
+        except NotifyUserException:
+            self.bot.sendMessage(self.maintainer_chat_id,
+                                 f"Initialization of Spectator State Map failed\BOT NOT RUNNING")
+            sys.exit(1)
+        else:
+            for (ID, State) in cursor:
+                state_map[ID] = SpectatorState(State)
             # self.logger.info(state_map)
             return state_map
 
@@ -253,6 +276,30 @@ class DatabaseHandler(object):
         except NotifyUserException:
             raise NotifyUserException
 
+    def add_spectator(self, chat_id: int, firstname: str, lastname: str):
+        """Add a new Spectator to the database: add a new line to the Spectator-Table
+
+        Args:
+            chat_id (int): the Telegram chat_id of the player to add
+            firstname (str): first name of player to add
+            lastname (str): last name of player to add
+
+        Raises:
+            NotifyUserException: if a database access fails, raise exception to notify admin and user
+        """
+
+        if lastname == ' No Name Given' or firstname == ' No Name Given':
+            # send message to admin indicating that no first/lastname is given
+            self.bot.sendMessage(self.maintainer_chat_id,
+                                 f"remember to manually update the name of {firstname} {lastname}")
+
+        try:
+            # insert new player row into Spectator-Table
+            mysql_statement = f"INSERT INTO Spectators(ID, FirstName, LastName, State) VALUES({chat_id},'{firstname}','{lastname}', {SpectatorState.AWAIT_APPROVE.value});"
+            self.execute_mysql_without_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+
     def player_present(self, chat_id: int):
         """check and return if a player is already in the database
 
@@ -275,6 +322,57 @@ class DatabaseHandler(object):
             cursor.fetchall()
             return cursor.rowcount > 0
 
+    def get_games_list_for_spectator(self):
+        """Assemble a list of all future games for a spectator
+
+        Raises:
+            NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
+
+        Returns:
+            [[]]: a list of lists containing the infos for each game
+        """
+
+        # get ordered list of games in the future
+        button_list = [['continue later']]
+        # make sure to have 'continue later' at top of button_list
+        try:
+            mysql_statement = f"SELECT DateTime, Place FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
+            cursor = self.execute_mysql_with_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+        else:
+            # pretty print columns, add to buttons
+            for (DateTime, Place) in cursor:
+                button_list.append([util.pretty_print_game(DateTime, Place)])
+            return button_list
+
+    def get_pending_spectators(self):
+        """Assemble a list of all pending spectators
+
+        Raises:
+            NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
+
+        Returns:
+            [[]]: a list of lists containing the pending spectators
+        """
+        # get ordered list of games in the future
+        button_list = [['continue later']]
+        # make sure to have 'continue later' at top of button_list
+        try:
+            mysql_statement = f"SELECT ID, LastName, FirstName FROM Spectators WHERE State=-1;"
+            cursor = self.execute_mysql_with_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+        else:
+            # pretty print columns, add to buttons
+            for (ID, LastName, FirstName) in cursor:
+                button_list.append([f"{ID} | {LastName} {FirstName}"])
+            self.logger.info(button_list)
+            if len(button_list) > 1:
+                return button_list
+            else:
+                return None
+
     def get_games_list_with_status_summary(self):
         """Assemble a list of all future games including the current status of the player with chat_id
 
@@ -289,9 +387,8 @@ class DatabaseHandler(object):
         """
 
         # get ordered list of games in the future
-        button_list = []
+        button_list = [['continue later']]
         # make sure to have 'continue later' at top of button_list
-        button_list.append(['continue later'])
         try:
             mysql_statement = f"SELECT * FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
@@ -318,9 +415,8 @@ class DatabaseHandler(object):
 
         # get ordered list of games in the future
         player_column = f"p{chat_id}"
-        button_list = []
+        button_list = [['continue later']]
         # make sure to have 'continue later' at top of button_list
-        button_list.append(['continue later'])
         try:
             mysql_statement = f"SELECT ID, DateTime, Place, {player_column} FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
@@ -498,7 +594,7 @@ class DatabaseHandler(object):
         except NotifyUserException:
             raise NotifyUserException
 
-    def update_state(self, chat_id: int, new_state: PlayerState):
+    def update_player_state(self, chat_id: int, new_state: PlayerState):
         """update the state of a player in the database
 
         Args:
@@ -510,6 +606,23 @@ class DatabaseHandler(object):
         """
 
         mysql_statement = f"UPDATE Players SET State = {new_state.value} WHERE ID = {chat_id};"
+        try:
+            self.execute_mysql_without_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+
+    def update_spectator_state(self, chat_id: int, new_state: SpectatorState):
+        """update the state of a spectator in the database
+
+        Args:
+            chat_id (int): chat_id of player to change state
+            new_state (PlayerState): new state to change to
+
+        Raises:
+            NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
+        """
+
+        mysql_statement = f"UPDATE Spectators SET State = {new_state.value} WHERE ID = {chat_id};"
         try:
             self.execute_mysql_without_result(mysql_statement, 0)
         except NotifyUserException:

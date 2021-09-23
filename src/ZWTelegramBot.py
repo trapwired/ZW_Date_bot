@@ -12,11 +12,13 @@ import telepot
 import utility as util
 from DatabaseHandler import DatabaseHandler
 from PlayerState import PlayerState
+from SpectatorState import SpectatorState
+from StateObject import StateObject
 from Scheduler import SchedulerHandler
 from exceptions import NotifyUserException, NotifyAdminException
 from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, \
     InlineKeyboardButton
- 
+
 
 # static methods
 def get_names(msg: dict):
@@ -112,7 +114,8 @@ class ZWTelegramBot(object):
                                                       self.maintainer_chat_id)
 
         # initialize lists / dicts
-        self.user_state_map = self.database_handler.init_state_map()
+        self.user_state_map = self.database_handler.init_user_state_map()
+        self.spectator_state_map = self.database_handler.init_spectator_state_map()
 
         # start Scheduler Handler
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
@@ -164,13 +167,12 @@ class ZWTelegramBot(object):
         content_type, chat_type, chat_id = telepot.glance(msg)
         # private chat reply
         if chat_type == 'private':
-
+            first_name, last_name = get_names(msg)
             # check if user in self.user_state_map / authorized to use bot
             if chat_id in self.user_state_map.keys():
 
                 # chat_id allowed to use admin-commands:
                 is_admin = chat_id in self.admin_chat_ids
-                first_name, last_name = get_names(msg)
 
                 try:
                     if content_type == 'text':
@@ -199,26 +201,42 @@ class ZWTelegramBot(object):
 
                         elif current_state is PlayerState.DEFAULT:
                             # handle default
-                            if command == '/add' and is_admin:
-                                self.logger.info('got /add')
-                                reply_text = self.get_reply_text('add', first_name)
-                                reply_keyboard = self.get_keyboard('add', chat_id)
-                                self.update_user_state_map(chat_id, PlayerState.ADD)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                            elif command == '/edit_games':
-                                self.update_user_state_map(chat_id, PlayerState.EDIT_CHOOSE_GAME)
-                                # Assemble reply
-                                reply_text = self.get_reply_text('edit_games', first_name)
-                                reply_keyboard = self.get_keyboard('overview_edit_games', chat_id)
-                                if reply_keyboard is None:
-                                    # there are no games in the future, reset State
-                                    self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                            if is_admin:
+                                if command == '/add':
+                                    self.logger.info('got /add')
+                                    reply_text = self.get_reply_text('add', first_name)
+                                    reply_keyboard = self.get_keyboard('add', chat_id)
+                                    self.update_user_state_map(chat_id, PlayerState.ADD)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                    return
+                                elif command == '/edit_games':
+                                    self.update_user_state_map(chat_id, PlayerState.EDIT_CHOOSE_GAME)
                                     # Assemble reply
-                                    reply_text = self.get_reply_text('overview_no_games', first_name)
-                                    reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
-                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
-                                                     parse_mode='MarkdownV2')
-                            elif command == '/help':
+                                    reply_text = self.get_reply_text('edit_games', first_name)
+                                    reply_keyboard = self.get_keyboard('overview_edit_games', chat_id)
+                                    if reply_keyboard is None:
+                                        # there are no games in the future, reset State
+                                        self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                        # Assemble reply
+                                        reply_text = self.get_reply_text('overview_no_games', first_name)
+                                        reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                         parse_mode='MarkdownV2')
+                                    return
+                                elif command == '/spectators':
+                                    self.update_user_state_map(chat_id, PlayerState.SPECTATOR_CHOOSE_PENDING)
+                                    reply_text = self.get_reply_text('choose_pending_spectator', first_name)
+                                    button_list = self.database_handler.get_pending_spectators()
+                                    reply_keyboard = self.get_keyboard('pending_spectators', chat_id, button_list=button_list)
+                                    if reply_keyboard is None or button_list is None:
+                                        # there are no games in the future, reset State
+                                        self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                        # Assemble reply
+                                        reply_text = self.get_reply_text('no_pending_spectators', first_name)
+                                        reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                    return
+                            if command == '/help':
                                 # Assemble reply
                                 reply_text = self.get_reply_text('help', first_name, is_admin=is_admin)
                                 reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
@@ -322,7 +340,6 @@ class ZWTelegramBot(object):
                                         self.handle_else(msg, chat_id)
 
                             elif current_state is PlayerState.EDIT_GAME:
-                                # handle
                                 if util.status_is_valid(command):
                                     self.database_handler.edit_game_attendance(self.user_state_map[chat_id].game_number,
                                                                                command, chat_id)
@@ -342,6 +359,59 @@ class ZWTelegramBot(object):
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                 else:
                                     self.handle_else(msg, chat_id)
+
+                        elif current_state.name.startswith('SPECTATOR'):
+                            if current_state is PlayerState.SPECTATOR_CHOOSE_PENDING:
+                                split = command.split('|')
+                                if len(split) > 1:
+                                    (self.user_state_map[chat_id]).spectator_id = int(split[0].strip())
+                                    reply_text = self.get_reply_text('spectator_app_or_ref', split[1])
+                                    reply_keyboard = self.get_keyboard('app_or_ref', chat_id)
+                                    self.update_user_state_map(chat_id, PlayerState.SPECTATOR_APP_OR_REF)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                elif command == 'continue later':
+                                    self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                    # Assemble reply
+                                    reply_text = self.get_reply_text('continue later', first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
+                            elif current_state is PlayerState.SPECTATOR_APP_OR_REF:
+                                if command in ['approve', 'refuse']:
+                                    new_spectator_state = SpectatorState.REFUSED
+                                    spectator_chat_id = (self.user_state_map[chat_id]).spectator_id
+                                    reply_text = self.get_reply_text('spectator_refused')
+                                    if command == 'approve':
+                                        new_spectator_state = SpectatorState.DEFAULT
+                                        spec_reply_text = self.get_reply_text('spectator_approved', is_spectator=True)
+                                        spec_reply_text += '\n' + self.get_reply_text('help', first_name='',
+                                                                                      is_spectator=True)
+                                        # notify spectator
+                                        spec_reply_keyboard = self.get_keyboard('help', spectator_chat_id,
+                                                                                is_spectator=True)
+                                        self.bot.sendMessage(spectator_chat_id, spec_reply_text,
+                                                             reply_markup=spec_reply_keyboard)
+                                        reply_text = self.get_reply_text('spectator_approved')
+                                    else:
+                                        spec_reply_text = self.get_reply_text('spectator_refused', is_spectator=True)
+                                        self.bot.sendMessage(spectator_chat_id, spec_reply_text)
+
+                                    self.database_handler.update_spectator_state(spectator_chat_id, new_spectator_state)
+                                    self.spectator_state_map[spectator_chat_id] = new_spectator_state
+
+                                    # reply to chat_id
+                                    self.bot.sendMessage(chat_id, reply_text)
+                                    # rehandle message
+                                    self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                    msg['text'] = '/spectators'
+                                    self.handle(msg)
+
+                                elif command == 'continue later':
+                                    self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                    # Assemble reply
+                                    reply_text = self.get_reply_text('continue later', first_name)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
                         else:
                             # user in no valid state, reset, notify admin
@@ -365,6 +435,88 @@ class ZWTelegramBot(object):
                     reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
 
+            elif chat_id in self.spectator_state_map.keys():
+                try:
+                    if content_type == 'text':
+
+                        command = msg['text'].lower()
+
+                        self.logger.info(f"Got command: {command} from {chat_id}")
+
+                        current_state = self.spectator_state_map[chat_id]
+                        # Switch for state of current user
+                        if current_state is SpectatorState.AWAIT_APPROVE:
+                            reply_text = self.get_reply_text('await_approve')
+                            self.bot.sendMessage(chat_id, reply_text)
+                        elif current_state is SpectatorState.REFUSED:
+                            # just ignore
+                            return
+                        elif current_state is SpectatorState.DEFAULT:
+                            if command == '/help':
+                                # Assemble reply
+                                reply_text = self.get_reply_text('help', first_name, is_spectator=True)
+                                reply_keyboard = self.get_keyboard('default', chat_id, is_spectator=True)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            elif command == '/start':
+                                # Assemble reply
+                                reply_text = self.get_reply_text('start', first_name, is_spectator=True)
+                                reply_keyboard = self.get_keyboard('default', chat_id, is_spectator=True)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            elif command == '/games':
+                                # Assemble reply
+                                self.update_spectator_state_map(chat_id, SpectatorState.CHOOSE_GAME)
+                                reply_text = self.get_reply_text('stats_overview', first_name, is_spectator=True)
+                                reply_keyboard = self.get_keyboard('overview_stats', chat_id, is_spectator=True)
+                                if reply_keyboard is None:
+                                    # no games in the future
+                                    self.update_spectator_state_map(chat_id, SpectatorState.DEFAULT)
+                                    reply_text = self.get_reply_text('overview_no_games', first_name)
+                                    reply_keyboard = self.get_keyboard('default', first_name, is_spectator=True)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                     parse_mode='MarkdownV2')
+                            elif command == '/website':
+                                # send inline button to handball.ch website
+                                reply_text = self.get_reply_text('website', first_name)
+                                reply_keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+                                    text="handball.ch/Züri West 1",
+                                    url='https://www.handball.ch/de/matchcenter/teams/34393')]])
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            else:
+                                self.handle_else(msg, chat_id, is_spectator=True)
+                        elif current_state is SpectatorState.CHOOSE_GAME:
+                            if command == 'continue later':
+                                self.update_spectator_state_map(chat_id, SpectatorState.DEFAULT)
+                                # Assemble reply
+                                reply_text = self.get_reply_text('continue later', first_name)
+                                reply_keyboard = self.get_keyboard('default', chat_id, is_spectator=True)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            else:
+                                game_date = command[:18]
+                                current_game_id = self.database_handler.get_game_id(game_date)
+                                if current_game_id >= 0:
+                                    # assemble reply with select-keyboard
+                                    reply_text = self.get_reply_text('stats', game_id=current_game_id)
+                                    reply_keyboard = self.get_keyboard('overview_stats', chat_id, is_spectator=True)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                         parse_mode='MarkdownV2')
+                                else:
+                                    # Game not in DataBase, ignore input
+                                    self.logger.warning(f"Game not found, got {command}")
+                                    self.handle_else(msg, chat_id)
+                        else:
+                            # handle
+                            x = 3
+                except NotifyUserException as nuException:
+                    # something went wrong
+                    self.update_spectator_state_map(chat_id, SpectatorState.DEFAULT)
+                    # send error to admin
+                    self.bot.sendMessage(self.maintainer_chat_id,
+                                         f"Error in executing the following query:\n{nuException}")
+                    # Assemble reply, notify user an error occurred
+                    reply_text = self.get_reply_text('error', first_name)
+                    reply_keyboard = self.get_keyboard('default', chat_id, is_spectator=True)
+                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+
             else:
                 # message from user, check if in group
                 chat_member_information = self.bot.getChatMember(self.group_chat_id, chat_id)
@@ -376,14 +528,14 @@ class ZWTelegramBot(object):
                     self.handle(msg)
                     return
                 else:
-                    self.bot.sendMessage(self.maintainer_chat_id,
-                                         f"Unauthorized usage from {chat_id}")
-                    # sender is not authorized to chat with bot
-                    self.logger.info(f"Unauthorized bot usage from {chat_id}")
-                    # Assemble reply
-                    reply_text = self.get_reply_text('no_Association')
-                    self.logger.info('would send not authorized')
-                    self.bot.sendMessage(chat_id, reply_text)
+                    self.update_spectator_state_map(chat_id, SpectatorState.AWAIT_APPROVE, firstname=first_name, lastname=last_name)
+                    self.logger.info('new usage, wait for approve')
+                    # Notify maintainer
+                    reply_text = self.get_reply_text('new_spectator')
+                    reply_keyboard = self.get_keyboard('default', chat_id, is_admin=True)
+                    self.bot.sendMessage(self.maintainer_chat_id, reply_text, reply_markup=reply_keyboard)
+                    # notify user
+                    self.handle(msg)
 
         # group chat reply
         elif chat_type in ['group', 'supergroup']:
@@ -421,7 +573,7 @@ class ZWTelegramBot(object):
             self.bot.sendMessage(self.maintainer_chat_id,
                                  f"unknown chat_type {chat_type}")
 
-    def handle_else(self, msg: dict, chat_id: int):
+    def handle_else(self, msg: dict, chat_id: int, is_spectator: bool = False):
         # chat is private and text
         first_name, last_name = get_names(msg)
         command = msg['text'].lower()
@@ -430,8 +582,12 @@ class ZWTelegramBot(object):
             reply_text = self.get_reply_text('hi', first_name)
             self.bot.sendMessage(chat_id, reply_text)
         else:
-            # send /help after updating to default
-            self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+            if is_spectator:
+                # send /help after updating to default
+                self.update_spectator_state_map(chat_id, SpectatorState.DEFAULT)
+            else:
+                # send /help after updating to default
+                self.update_user_state_map(chat_id, PlayerState.DEFAULT)
             msg['text'] = '/help'
             self.handle(msg)
 
@@ -457,10 +613,12 @@ class ZWTelegramBot(object):
         self.bot.message_loop({'chat': self.handle, 'callback_query': self.handle_callback_query})
         self.logger.info("Bot started")
 
-    def get_reply_text(self, kind: str, first_name: str = None, is_admin: bool = False, game_id: int = -1):
+    def get_reply_text(self, kind: str, first_name: str = None, is_admin: bool = False, game_id: int = -1,
+                       is_spectator: bool = False):
         """Send appropriate reply text
 
         Args:
+            is_spectator: is the user a spectator or normal player
             game_id: the game id to get the status to
             kind (str): which kind of reply, acts as switch value
             first_name (str, optional): for personalized messages, use first_name. Defaults to None.
@@ -476,6 +634,12 @@ class ZWTelegramBot(object):
                     f"\nYou can write /cancel to " \
                     f"cancel the process any time."
 
+        elif kind == 'await_approve':
+            reply = f"Wait for the administrator to approve your status as spectator\\."
+
+        elif kind == 'choose_pending_spectator':
+            reply = f"Choose the pending spectator to approve or refuse\\."
+
         elif kind == 'help':
             if is_admin:
                 reply = f"Hi {first_name} - here are my available commands" \
@@ -483,46 +647,82 @@ class ZWTelegramBot(object):
                         f"\n/help: shows the list of available commands" \
                         f"\n/stats: shows the status for our next game" \
                         f"\n/add: add new game or Timekeeper event" \
+                        f"\n/website: Returns the link for Handball.ch/Züri West" \
+                        f"\n/spectators: show the list of currently (pending) spectators of the bot"
+            elif is_spectator:
+                reply = f"Hi {first_name} - here are my available commands" \
+                        f"\n/help: shows the list of available commands" \
+                        f"\n/games: shows the status for our next games" \
                         f"\n/website: Returns the link for Handball.ch/Züri West"
             else:
                 reply = f"Hi {first_name} - here are my available commands" \
                         f"\n/edit_games: lets you edit your games" \
                         f"\n/help: shows the list of available commands" \
-                        f"\n/stats: shows the status for our next game" \
+                        f"\n/stats: shows the status for our next games" \
                         f"\n/website: Returns the link for Handball.ch/Züri West"
 
         elif kind == 'init':
-            reply = f"Please try again by clicking on /start"
+            reply = f"Please try again by clicking on /start\\!"
 
         elif kind == 'edit_games':
             reply = "Click on the game to change you attendance \\- in brackets you see your current status \\ " \
-                    "\n*TIPP: the list ist scrollable*"
+                    "\n*TIPP: the list is scrollable\\!*"
 
         elif kind == 'error':
             reply = "Hang on - an unknown error occurred - please try again in a few minutes - " \
-                    "Dominic has been informed"
+                    "Dominic has been informed\\."
 
         elif kind == 'hi':
             reply = f"Hi {first_name}"
 
+        elif kind == 'new_spectator':
+            reply = f"New spectator to approve available\\. Access via /spectators"
+
         elif kind == 'no_Association':
-            reply = f"You are not allowed to use this bot, if you think this is wrong doing, contact your referrer"
+            reply = f"You are not allowed to use this bot, if you think this is wrong doing, contact your referrer\\!"
+
+        elif kind == 'no_pending_spectators':
+            reply = f"There are no pending spectators\\!"
 
         elif kind == 'overview_no_games':
-            reply = 'There are no upcoming games'
+            reply = 'There are no upcoming games\\!'
 
         elif kind == 'opponent':
-            reply = f"Great, against whom will we play?\n(write /cancel to cancel the process)"
+            reply = f"Great, against whom will we play?" \
+                    f"\n(write /cancel to cancel the process)"
+
+        elif kind == 'spectator_app_or_ref':
+            reply = f"Do you want to approve or refuse {first_name}?"
+
+        elif kind == 'spectator_approved':
+            if is_spectator:
+                reply = 'You have been approved\\!'
+            else:
+                reply = f"You approved the spectator\\!"
+
+        elif kind == 'spectator_refused':
+            if is_spectator:
+                reply = 'You have been refused. If you think this is wrong, contact the administrator\\.'
+            else:
+                reply = "You refused the spectator\\!"
 
         elif kind == 'start':
-            reply = f"Hi {first_name}! \nI am the Züri West Manager " \
-                    f"\nBelow you see the available commands " \
-                    f"\nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games"
+            if is_spectator:
+                reply = f"Hi {first_name}! \nI am the Züri West Manager " \
+                        f"\nBelow you see the available commands "
+            else:
+                reply = f"Hi {first_name}! \nI am the Züri West Manager " \
+                        f"\nBelow you see the available commands " \
+                        f"\nWhen your are ready, click on \'/edit_games\' to mark your presence in Züri West handball games"
 
         elif kind == 'stats_overview':
-            reply = "Click on the game to get the stats for \\- the summary is of the format: " \
-                    "\n 5 *Y*ES \\- 3 *N*O \\- 4 *U*NSURE " \
-                    "\n*TIPP: the list ist scrollable*"
+            if is_spectator:
+                reply = "Click on the game to get the stats for" \
+                        "\n*TIPP: the list is scrollable*"
+            else:
+                reply = "Click on the game to get the stats for \\- the summary is of the format: " \
+                        "\n 5 *Y*ES \\- 3 *N*O \\- 4 *U*NSURE " \
+                        "\n*TIPP: the list is scrollable*"
 
         elif kind == 'stats':
             reply = self.database_handler.get_stats_game(game_id)
@@ -554,10 +754,12 @@ class ZWTelegramBot(object):
 
         return reply
 
-    def get_keyboard(self, kind: str, chat_id: int, button_list: list = None, is_admin: bool = False):
+    def get_keyboard(self, kind: str, chat_id: int, button_list: list = None, is_admin: bool = False,
+                     is_spectator: bool = False):
         """Get appropriate ReplyKeyboardMarkup
 
         Args:
+            is_spectator (bool) : is the user a spectator or normal player
             kind (str): which keyboard, acts as switch value
             chat_id (int): Telegram chat_id of the user the reply is sent to
             button_list (list, optional): [description]. Defaults to None.
@@ -572,12 +774,17 @@ class ZWTelegramBot(object):
 
         keyboard = None
         if kind == 'add':
-            keyboard = ReplyKeyboardMarkup(keyboard=[['Handball Game'], ['Timekeeper Event'], ['/cancel']],
+            keyboard = ReplyKeyboardMarkup(keyboard=[['Handball Game'], ['Timekeeper Event']],
                                            resize_keyboard=True)
-
+        elif kind == 'app_or_ref':
+            keyboard = ReplyKeyboardMarkup(keyboard=[['Approve', 'Refuse'], ['continue later']],
+                                           resize_keyboard=True)
         elif kind == 'default':
             if is_admin:
-                keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games', '/add', '/website']],
+                keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats', '/edit_games'], ['/spectators', '/add', '/website']],
+                                               resize_keyboard=True)
+            elif is_spectator:
+                keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/website'], ['/games']],
                                                resize_keyboard=True)
             else:
                 keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats'], ['/edit_games', '/website']],
@@ -587,9 +794,16 @@ class ZWTelegramBot(object):
 
         elif kind == 'ok_or_cancel':
             keyboard = ReplyKeyboardMarkup(keyboard=[['/ok', '/cancel']], resize_keyboard=True)
-        elif kind == 'overview_edit_games':
+        elif kind.startswith('overview_'):
             try:
-                buttons = self.database_handler.get_games_list_with_status(chat_id)
+                buttons = [['']]
+                if kind == 'overview_edit_games':
+                    buttons = self.database_handler.get_games_list_with_status(chat_id)
+                elif kind == 'overview_stats':
+                    if is_spectator:
+                        buttons = self.database_handler.get_games_list_for_spectator()
+                    else:
+                        buttons = self.database_handler.get_games_list_with_status_summary()
             except NotifyUserException as nuException:
                 raise NotifyUserException(nuException)
             else:
@@ -597,16 +811,8 @@ class ZWTelegramBot(object):
                     # there are no games in the future
                     return None
                 keyboard = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=True)
-        elif kind == 'overview_stats':
-            try:
-                buttons = self.database_handler.get_games_list_with_status_summary()
-            except NotifyUserException as nuException:
-                raise NotifyUserException(nuException)
-            else:
-                if len(buttons) < 2:
-                    # there are no games in the future
-                    return None
-                keyboard = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=True)
+        elif kind == 'pending_spectators':
+            keyboard = ReplyKeyboardMarkup(keyboard=button_list, resize_keyboard=True)
         elif kind == 'reminder_games':
             keyboard = ReplyKeyboardMarkup(keyboard=button_list, resize_keyboard=True)
         elif kind == 'remove':
@@ -618,7 +824,6 @@ class ZWTelegramBot(object):
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="handball.ch/Züri West 1",
                                                        url='https://www.handball.ch/de/matchcenter/teams/32010')]])
-
         return keyboard
 
     def update_user_state_map(self, chat_id: int, new_state: PlayerState):
@@ -634,7 +839,7 @@ class ZWTelegramBot(object):
 
         try:
             # update DataBase
-            self.database_handler.update_state(chat_id, new_state)
+            self.database_handler.update_player_state(chat_id, new_state)
         except NotifyUserException:
             raise NotifyUserException
         else:
@@ -642,6 +847,33 @@ class ZWTelegramBot(object):
             self.user_state_map[chat_id].state = new_state
             if new_state is not PlayerState.EDIT_GAME:
                 self.user_state_map[chat_id].game_number = -1
+            if new_state is not PlayerState.SPECTATOR_APP_OR_REF:
+                self.user_state_map[chat_id].spectator_id = -1
+
+    def update_spectator_state_map(self, chat_id: int, new_state: SpectatorState, firstname: str = '', lastname: str = ''):
+        """update the state map in program-dict and database
+
+        Args:
+            lastname: ...
+            firstname: ...
+            chat_id (int): chat_id of player_chat_i to change state
+            new_state (SpectatorState): new state to change to
+
+        Raises:
+            NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
+        """
+
+        try:
+            # update DataBase
+            if chat_id in self.spectator_state_map:
+                self.database_handler.update_spectator_state(chat_id, new_state)
+            else:
+                self.database_handler.add_spectator(chat_id, firstname, lastname)
+        except NotifyUserException:
+            raise NotifyUserException
+        else:
+            # update self.state_map
+            self.spectator_state_map[chat_id] = new_state
 
     def send_stats_to_group_chat(self):
         """send the current status to the group chat, if there is a game in exactly 4 days

@@ -20,6 +20,7 @@ class PlayerState(Enum):
     EDIT_CHOOSE_GAME = 200
     EDIT_GAME = 201
 
-    OBSERVER = 999
-
     GROUP_CHAT = -42
+
+    SPECTATOR_CHOOSE_PENDING = 300
+    SPECTATOR_APP_OR_REF = 301
