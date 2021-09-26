@@ -179,7 +179,7 @@ class DatabaseHandler(object):
             sys.exit(1)
         else:
             for (ID, State) in cursor:
-                state_map[ID] = SpectatorState(State)
+                state_map[int(ID)] = SpectatorState(State)
             # self.logger.info(state_map)
             return state_map
 

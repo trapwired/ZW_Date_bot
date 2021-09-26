@@ -198,6 +198,7 @@ class ZWTelegramBot(object):
                                 reply_text = self.get_reply_text('init')
                                 reply_keyboard = self.get_keyboard('init', chat_id)
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                            return
 
                         elif current_state is PlayerState.DEFAULT:
                             # handle default
@@ -208,20 +209,6 @@ class ZWTelegramBot(object):
                                     reply_keyboard = self.get_keyboard('add', chat_id)
                                     self.update_user_state_map(chat_id, PlayerState.ADD)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                                    return
-                                elif command == '/edit_games':
-                                    self.update_user_state_map(chat_id, PlayerState.EDIT_CHOOSE_GAME)
-                                    # Assemble reply
-                                    reply_text = self.get_reply_text('edit_games', first_name)
-                                    reply_keyboard = self.get_keyboard('overview_edit_games', chat_id)
-                                    if reply_keyboard is None:
-                                        # there are no games in the future, reset State
-                                        self.update_user_state_map(chat_id, PlayerState.DEFAULT)
-                                        # Assemble reply
-                                        reply_text = self.get_reply_text('overview_no_games', first_name)
-                                        reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
-                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
-                                                         parse_mode='MarkdownV2')
                                     return
                                 elif command == '/spectators':
                                     self.update_user_state_map(chat_id, PlayerState.SPECTATOR_CHOOSE_PENDING)
@@ -237,17 +224,29 @@ class ZWTelegramBot(object):
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                     return
                             if command == '/help':
-                                # Assemble reply
                                 reply_text = self.get_reply_text('help', first_name, is_admin=is_admin)
                                 reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                return
+                            elif command == '/edit_games':
+                                self.update_user_state_map(chat_id, PlayerState.EDIT_CHOOSE_GAME)
+                                reply_text = self.get_reply_text('edit_games', first_name)
+                                reply_keyboard = self.get_keyboard('overview_edit_games', chat_id)
+                                if reply_keyboard is None:
+                                    # there are no games in the future, reset State
+                                    self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                    # Assemble reply
+                                    reply_text = self.get_reply_text('overview_no_games', first_name)
+                                    reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
+                                self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                     parse_mode='MarkdownV2')
+                                return
                             elif command == '/start':
-                                # Assemble reply
                                 reply_text = self.get_reply_text('start', first_name)
                                 reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                return
                             elif command == '/stats':
-                                # Assemble reply
                                 self.update_user_state_map(chat_id, PlayerState.GET_STATS)
                                 reply_text = self.get_reply_text('stats_overview', first_name)
                                 reply_keyboard = self.get_keyboard('overview_stats', chat_id)
@@ -258,6 +257,7 @@ class ZWTelegramBot(object):
                                     reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
                                                      parse_mode='MarkdownV2')
+                                return
                             elif command == '/website':
                                 # send inline button to handball.ch website
                                 reply_text = self.get_reply_text('website', first_name)
@@ -265,8 +265,10 @@ class ZWTelegramBot(object):
                                     text="handball.ch/Züri West 1",
                                     url='https://www.handball.ch/de/matchcenter/teams/34393')]])
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                return
                             else:
                                 self.handle_else(msg, chat_id)
+                                return
 
                         elif current_state is PlayerState.GET_STATS:
                             # handle getStats
@@ -317,6 +319,7 @@ class ZWTelegramBot(object):
                         #         # handle default???
 
                         elif current_state.name.startswith('EDIT'):
+                            self.logger.info(f"in edit games, STATE startswith(EDIT)")
                             if current_state is PlayerState.EDIT_CHOOSE_GAME:
                                 if command == 'continue later':
                                     self.update_user_state_map(chat_id, PlayerState.DEFAULT)
@@ -337,7 +340,7 @@ class ZWTelegramBot(object):
                                     else:
                                         # Game not in DataBase, ignore input
                                         self.logger.warning(f"Game not found, got {command}")
-                                        self.handle_else(msg, chat_id)
+                                        # self.handle_else(msg, chat_id)
 
                             elif current_state is PlayerState.EDIT_GAME:
                                 if util.status_is_valid(command):
@@ -357,8 +360,8 @@ class ZWTelegramBot(object):
                                     reply_text = self.get_reply_text('continue later', first_name)
                                     reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                                else:
-                                    self.handle_else(msg, chat_id)
+                                # else:
+                                    # self.handle_else(msg, chat_id)
 
                         elif current_state.name.startswith('SPECTATOR'):
                             if current_state is PlayerState.SPECTATOR_CHOOSE_PENDING:
@@ -397,7 +400,7 @@ class ZWTelegramBot(object):
                                         self.bot.sendMessage(spectator_chat_id, spec_reply_text)
 
                                     self.database_handler.update_spectator_state(spectator_chat_id, new_spectator_state)
-                                    self.spectator_state_map[spectator_chat_id] = new_spectator_state
+                                    self.update_spectator_state_map(spectator_chat_id, new_spectator_state)
 
                                     # reply to chat_id
                                     self.bot.sendMessage(chat_id, reply_text)
@@ -574,6 +577,7 @@ class ZWTelegramBot(object):
                                  f"unknown chat_type {chat_type}")
 
     def handle_else(self, msg: dict, chat_id: int, is_spectator: bool = False):
+        self.logger.info(f"handle_else, got {msg} from {chat_id}")
         # chat is private and text
         first_name, last_name = get_names(msg)
         command = msg['text'].lower()
@@ -837,6 +841,7 @@ class ZWTelegramBot(object):
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
         """
 
+        self.logger.info(f"updating User state for {chat_id} from {self.user_state_map[chat_id].state} to {new_state}")
         try:
             # update DataBase
             self.database_handler.update_player_state(chat_id, new_state)
@@ -862,10 +867,10 @@ class ZWTelegramBot(object):
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
         """
-
+        self.logger.info(f"updating spectator state for {chat_id} from {self.spectator_state_map[chat_id]} to {new_state}")
         try:
             # update DataBase
-            if chat_id in self.spectator_state_map:
+            if chat_id in self.spectator_state_map.keys():
                 self.database_handler.update_spectator_state(chat_id, new_state)
             else:
                 self.database_handler.add_spectator(chat_id, firstname, lastname)
