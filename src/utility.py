@@ -114,23 +114,6 @@ def pretty_print_game(DateTime: datetime, place: str, status: int = None):
         return f"{pretty_dateTime} | {place} | {pretty_status}"
 
 
-def pretty_print_game_from_list(values: list):
-    """pretty print game infos from list with unknown amount of colums
-
-    Args:
-        values (list): a list containing one row of the Games table
-
-    Returns:
-        str: pretty-printed game with short summary on attendance
-    """
-    attendance = [0, 0, 0]
-    for value in values[4:]:
-        attendance[int(value)] += 1
-    pretty_summary = f"{attendance[1]}Y / {attendance[2]}N / {attendance[0]}U"
-    pretty_datetime = make_datetime_pretty(values[1])
-    return f"{pretty_datetime} | {values[2]} | {pretty_summary}"
-
-
 def is_member_of_group(status: str):
     """check, whether a given status indicates group-association
 

@@ -150,14 +150,14 @@ class DatabaseHandler(object):
 
         state_map = dict()
         try:
-            mysql_statement = "SELECT ID, State FROM Players;"
+            mysql_statement = "SELECT ID, State, Retired FROM Players;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
             self.bot.sendMessage(self.maintainer_chat_id, f"Initialization of Player State Map failed\BOT NOT RUNNING")
             sys.exit(1)
         else:
-            for (ID, State) in cursor:
-                state_map[ID] = StateObject(State)
+            for (ID, State, Retired) in cursor:
+                state_map[ID] = StateObject(State, Retired)
             # self.logger.info(state_map)
             return state_map
 
@@ -190,18 +190,18 @@ class DatabaseHandler(object):
             dict(): map from chat_id to Name
         """
 
-        mysql_statement = "SELECT ID, LastName, FirstName FROM Players;"
+        mysql_statement = "SELECT ID, LastName, FirstName, Retired FROM Players;"
         try:
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
             self.bot.sendMessage(self.maintainer_chat_id,
-                                 f"Initialization of Player to chat_id dictionary failed\BOT NOT RUNNING")
+                                 f"Initialization of Player to chat_id dictionary failed - BOT NOT RUNNING")
             sys.exit(1)
         else:
             player_dict = dict()
-            for (ID, LastName, FirstName) in cursor:
+            for (ID, LastName, FirstName, Retired) in cursor:
                 # store Max M. for fast pretty printing status
-                player_dict[ID] = f"{FirstName} {LastName[:1]}\\."
+                player_dict[ID] = (f"{FirstName} {LastName[:1]}\\.", Retired)
             return player_dict
 
     def get_games_in_exactly_x_days(self, x: int):
@@ -263,7 +263,7 @@ class DatabaseHandler(object):
         try:
             # insert new player row into Players-Table
             new_column_name = f"p{chat_id}"
-            mysql_statement = f"INSERT INTO Players(ID, FirstName, LastName, State) VALUES({chat_id},'{firstname}','{lastname}', {PlayerState.DEFAULT.value});"
+            mysql_statement = f"INSERT INTO Players(ID, FirstName, LastName, State, Retired) VALUES({chat_id},'{firstname}','{lastname}', {PlayerState.DEFAULT.value}, False);"
             self.execute_mysql_without_result(mysql_statement, 0)
 
             # insert new column into Games-Table
@@ -271,7 +271,7 @@ class DatabaseHandler(object):
             self.execute_mysql_without_result(mysql_statement2, 0)
 
             # add new player to player_chat_id_dict
-            self.player_chat_id_dict[chat_id] = f"{firstname} {lastname[:1]}\\."
+            self.player_chat_id_dict[chat_id] = (f"{firstname} {lastname[:1]}\\.", False)
 
         except NotifyUserException:
             raise NotifyUserException
@@ -390,14 +390,15 @@ class DatabaseHandler(object):
         button_list = [['continue later']]
         # make sure to have 'continue later' at top of button_list
         try:
-            mysql_statement = f"SELECT * FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
+            mysql_statement = f"SELECT ID FROM Games WHERE DateTime > CURDATE() ORDER BY DateTime ASC;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
             raise NotifyUserException
         else:
             # pretty print columns, add to buttons
-            for values_list in cursor:
-                button_list.append([util.pretty_print_game_from_list(values_list)])
+            rows = cursor.fetchall()
+            for (ID,) in rows:
+                button_list.append([self.get_stats_game(ID, short=True)])
             return button_list
 
     def get_games_list_with_status(self, chat_id: int):
@@ -444,10 +445,7 @@ class DatabaseHandler(object):
             player_list.append(player_id)
         return (player_columns, player_list)
 
-    def get_stats_next_game(self):
-        return self.get_stats_game(is_next=True)
-
-    def get_stats_game(self, game_id: int = -1, is_next: bool = False):
+    def get_stats_game(self, game_id: int = -1, short: bool = False):
         """return the summary for the next game in the future indicating which players will play and which won't
 
         Raises:
@@ -460,7 +458,7 @@ class DatabaseHandler(object):
 
         try:
             mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE ID={game_id};"
-            if is_next:
+            if game_id < 0:
                 mysql_statement = f"SELECT DateTime, Place, Adversary {player_columns} FROM Games WHERE DateTime > CURRENT_TIMESTAMP() ORDER BY DateTime ASC LIMIT 1;"
             cursor = self.execute_mysql_with_result(mysql_statement, 0)
         except NotifyUserException:
@@ -480,12 +478,18 @@ class DatabaseHandler(object):
                 # iterate over players, add to yes/no/unsure_list according to their status
                 status = return_row[count]
                 if status == 0:
-                    unsure_list.append(self.player_chat_id_dict[player])
+                    if not self.player_chat_id_dict[player][1]:
+                        unsure_list.append(self.player_chat_id_dict[player][0])
                 elif status == 1:
-                    yes_list.append(self.player_chat_id_dict[player])
+                    yes_list.append(self.player_chat_id_dict[player][0])
                 elif status == 2:
-                    no_list.append(self.player_chat_id_dict[player])
+                    no_list.append(self.player_chat_id_dict[player][0])
                 count += 1
+
+            if short:
+                pretty_summary = f"{len(yes_list)}Y / {len(no_list)}N / {len(unsure_list)}U"
+                pretty_datetime = util.make_datetime_pretty(return_row[0])
+                return f"{pretty_datetime} | {return_row[1]} | {pretty_summary}"
 
             # total player count
             player_count = len(yes_list) + len(no_list) + len(unsure_list)
