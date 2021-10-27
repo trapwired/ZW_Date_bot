@@ -1,3 +1,5 @@
+import traceback
+
 import mariadb
 import sys
 import configparser
@@ -94,8 +96,8 @@ class DatabaseHandler(object):
             self.cursor.execute(mysql_statement)
         except self.connection.Error as err:
             self.logger.error(f" Tried {mysql_statement} - {err}", exc_info=True)
-        except:
-            self.logger.error(f"Tried {mysql_statement}: ", exc_info=True)
+        except Exception as e:
+            self.logger.error(f"Unhandled exception: Tried {mysql_statement}, got {traceback.format_exc()}", exc_info=True)
         else:
             self.connection.commit()
             return
@@ -129,8 +131,9 @@ class DatabaseHandler(object):
             self.cursor.execute(mysql_statement)
         except self.connection.Error as err:
             self.logger.error(f" Tried {mysql_statement} - {err}", exc_info=True)
-        except:
-            self.logger.error(f"Tried {mysql_statement}: ", exc_info=True)
+        except Exception as e:
+            self.logger.error(f"Unhandled exception: Tried {mysql_statement}, got {traceback.format_exc()}",
+                              exc_info=True)
         else:
             return self.cursor
 
@@ -372,6 +375,28 @@ class DatabaseHandler(object):
                 return button_list
             else:
                 return None
+
+    def get_player_stats(self):
+        """Dump the Players database to a message
+
+                Raises:
+                    NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
+
+                Returns:
+                    str: a string containing a dump of the Players database
+                """
+        result = 'Database dump from Table Players:\n'
+        collection = []
+        try:
+            mysql_statement = f"SELECT ID, LastName, FirstName, State, Retired FROM Players;"
+            cursor = self.execute_mysql_with_result(mysql_statement, 0)
+        except NotifyUserException:
+            raise NotifyUserException
+        else:
+            # pretty print columns, add to buttons
+            for (ID, LastName, FirstName, State, Retired) in cursor:
+                collection.append((ID, LastName, FirstName, State, Retired))
+            return util.pretty_print_player_db(collection)
 
     def get_games_list_with_status_summary(self):
         """Assemble a list of all future games including the current status of the player with chat_id

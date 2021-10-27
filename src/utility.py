@@ -196,3 +196,50 @@ def sum_infos(info_list: list):
     for info in info_list:
         all_infos += info + '|'
     return all_infos[:(len(all_infos) - 1)]
+
+
+def pretty_print_player_db(player_list):
+    header_id = "ID"
+    header_ln = "LastName"
+    header_fn = "FirstName"
+    header_state = "State"
+    header_ret = "Retired"
+    len_id = len(header_id)
+    len_ln = len(header_ln)
+    len_fn = len(header_fn)
+    len_state = len(header_state)
+    len_ret = len(header_ret)
+    for (ID, fn, ln, state, ret) in player_list:
+        len_id = max(len_id, len(str(ID)))
+        len_ln = max(len_fn, len(ln))
+        len_fn = max(len_fn, len(fn))
+        len_state = max(len_state, len(str(state)))
+        len_ret = max(len_ret, len(str(ret)))
+
+    def pad_it(string, l, is_left=False):
+        if is_left:
+            return "  " * (l - len(string)) + string
+        return string + "  " * (l - len(string))
+
+    res = "Database dump for Players\n"
+    res += f"{pad_it(header_id, len_id + 1)} " \
+           f"{pad_it(header_fn, len_fn + 1)} " \
+           f"{pad_it(header_ln, len_ln + 1)} " \
+           f"{pad_it(header_state, len_state + 1)} " \
+           f"{pad_it(header_ret, len_ret + 1)}\n\n"
+    for (ID, fn, ln, state, ret) in player_list:
+        res += f"{pad_it(str(ID), len_id + 1, True)} " \
+               f"{pad_it(fn, len_fn + 1)} " \
+               f"{pad_it(ln, len_ln + 1)} " \
+               f"{pad_it(str(state), len_state + 1, True)} " \
+               f"{pad_it(str(ret), len_ret + 1, True)}\n"
+    return res
+
+
+def pretty_print_player_states():
+    res = f"Pretty printing player states:\n\n"
+    with open("PlayerState.py", "r") as f:
+        for line in f:
+            if line.startswith("    ") and not line.startswith("     "):
+                res += line
+    return res

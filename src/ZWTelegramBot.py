@@ -214,13 +214,23 @@ class ZWTelegramBot(object):
                                     self.update_user_state_map(chat_id, PlayerState.SPECTATOR_CHOOSE_PENDING)
                                     reply_text = self.get_reply_text('choose_pending_spectator', first_name)
                                     button_list = self.database_handler.get_pending_spectators()
-                                    reply_keyboard = self.get_keyboard('pending_spectators', chat_id, button_list=button_list)
+                                    reply_keyboard = self.get_keyboard('pending_spectators', chat_id,
+                                                                       button_list=button_list)
                                     if reply_keyboard is None or button_list is None:
                                         # there are no games in the future, reset State
                                         self.update_user_state_map(chat_id, PlayerState.DEFAULT)
                                         # Assemble reply
                                         reply_text = self.get_reply_text('no_pending_spectators', first_name)
                                         reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                    return
+                                elif command == '/get_player_stats':
+                                    reply_text = self.get_reply_text('player_stats', first_name, is_admin=is_admin)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
+                                    self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
+                                    reply_text = self.get_reply_text('get_playerState_Enum', first_name,
+                                                                     is_admin=is_admin)
+                                    reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                     return
                             if command == '/help':
@@ -339,8 +349,16 @@ class ZWTelegramBot(object):
                                         self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                     else:
                                         # Game not in DataBase, ignore input
-                                        self.logger.warning(f"Game not found, got {command}")
-                                        # self.handle_else(msg, chat_id)
+                                        self.logger.warning(f"in Edit-else: Game not found, got {command}")
+                                        reply_text = self.get_reply_text('edit_games', first_name, mnu=True)
+                                        reply_keyboard = self.get_keyboard('overview_edit_games', chat_id)
+                                        if reply_keyboard is None:
+                                            # no games in the future
+                                            self.update_user_state_map(chat_id, PlayerState.DEFAULT)
+                                            reply_text = self.get_reply_text('overview_no_games', first_name)
+                                            reply_keyboard = self.get_keyboard('default', first_name, is_admin=is_admin)
+                                        self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard,
+                                                             parse_mode='MarkdownV2')
 
                             elif current_state is PlayerState.EDIT_GAME:
                                 if util.status_is_valid(command):
@@ -360,8 +378,8 @@ class ZWTelegramBot(object):
                                     reply_text = self.get_reply_text('continue later', first_name)
                                     reply_keyboard = self.get_keyboard('default', chat_id, is_admin=is_admin)
                                     self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
-                                # else:
-                                    # self.handle_else(msg, chat_id)
+                                else:
+                                    self.handle_else(msg, chat_id)
 
                         elif current_state.name.startswith('SPECTATOR'):
                             if current_state is PlayerState.SPECTATOR_CHOOSE_PENDING:
@@ -508,7 +526,7 @@ class ZWTelegramBot(object):
                                     self.handle_else(msg, chat_id)
                         else:
                             # handle
-                            x = 3
+                            pass
                 except NotifyUserException as nuException:
                     # something went wrong
                     self.update_spectator_state_map(chat_id, SpectatorState.DEFAULT)
@@ -531,7 +549,8 @@ class ZWTelegramBot(object):
                     self.handle(msg)
                     return
                 else:
-                    self.update_spectator_state_map(chat_id, SpectatorState.AWAIT_APPROVE, firstname=first_name, lastname=last_name)
+                    self.update_spectator_state_map(chat_id, SpectatorState.AWAIT_APPROVE, firstname=first_name,
+                                                    lastname=last_name)
                     self.logger.info('new usage, wait for approve')
                     # Notify maintainer
                     reply_text = self.get_reply_text('new_spectator')
@@ -618,10 +637,11 @@ class ZWTelegramBot(object):
         self.logger.info("Bot started")
 
     def get_reply_text(self, kind: str, first_name: str = None, is_admin: bool = False, game_id: int = -1,
-                       is_spectator: bool = False):
+                       is_spectator: bool = False, mnu: bool = False):
         """Send appropriate reply text
 
         Args:
+            mnu (bool): MessageNotUnderstood: prepends the MNU message
             is_spectator: is the user a spectator or normal player
             game_id: the game id to get the status to
             kind (str): which kind of reply, acts as switch value
@@ -652,7 +672,8 @@ class ZWTelegramBot(object):
                         f"\n/stats: shows the status for our next game" \
                         f"\n/add: add new game or Timekeeper event" \
                         f"\n/website: Returns the link for Handball.ch/Züri West" \
-                        f"\n/spectators: show the list of currently (pending) spectators of the bot"
+                        f"\n/spectators: show the list of currently (pending) spectators of the bot" \
+                        f"\n/get_player_stats: dump the contents of the Players table"
             elif is_spectator:
                 reply = f"Hi {first_name} - here are my available commands" \
                         f"\n/help: shows the list of available commands" \
@@ -676,6 +697,9 @@ class ZWTelegramBot(object):
             reply = "Hang on - an unknown error occurred - please try again in a few minutes - " \
                     "Dominic has been informed\\."
 
+        elif kind == 'get_playerState_Enum':
+            reply = util.pretty_print_player_states()
+
         elif kind == 'hi':
             reply = f"Hi {first_name}"
 
@@ -694,6 +718,9 @@ class ZWTelegramBot(object):
         elif kind == 'opponent':
             reply = f"Great, against whom will we play?" \
                     f"\n(write /cancel to cancel the process)"
+
+        elif kind == 'player_stats':
+            reply = self.database_handler.get_player_stats()
 
         elif kind == 'spectator_app_or_ref':
             reply = f"Do you want to approve or refuse {first_name}?"
@@ -755,7 +782,9 @@ class ZWTelegramBot(object):
         elif kind == 'where':
             reply = 'Fantastic, WHERE will the event be?' \
                     '\n(write /cancel to cancel the process)'
-
+        if mnu:
+            mnu = "Sorry\\, I didn't understand that\\. Maybe there is a typo in your response\\?\n\n"
+            return mnu + reply
         return reply
 
     def get_keyboard(self, kind: str, chat_id: int, button_list: list = None, is_admin: bool = False,
@@ -785,8 +814,10 @@ class ZWTelegramBot(object):
                                            resize_keyboard=True)
         elif kind == 'default':
             if is_admin:
-                keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/stats', '/edit_games'], ['/spectators', '/add', '/website']],
-                                               resize_keyboard=True)
+                keyboard = ReplyKeyboardMarkup(
+                    keyboard=[['/help', '/stats', '/edit_games'], ['/spectators', '/add', '/website'],
+                              ['/get_player_stats']],
+                    resize_keyboard=True)
             elif is_spectator:
                 keyboard = ReplyKeyboardMarkup(keyboard=[['/help', '/website'], ['/games']],
                                                resize_keyboard=True)
@@ -855,7 +886,8 @@ class ZWTelegramBot(object):
             if new_state is not PlayerState.SPECTATOR_APP_OR_REF:
                 self.user_state_map[chat_id].spectator_id = -1
 
-    def update_spectator_state_map(self, chat_id: int, new_state: SpectatorState, firstname: str = '', lastname: str = ''):
+    def update_spectator_state_map(self, chat_id: int, new_state: SpectatorState, firstname: str = '',
+                                   lastname: str = ''):
         """update the state map in program-dict and database
 
         Args:
@@ -867,7 +899,8 @@ class ZWTelegramBot(object):
         Raises:
             NotifyUserException: General Error to tell DataBase Access failed, user and admin will be notified
         """
-        self.logger.info(f"updating spectator state for {chat_id} from {self.spectator_state_map[chat_id]} to {new_state}")
+        self.logger.info(
+            f"updating spectator state for {chat_id} from {self.spectator_state_map[chat_id]} to {new_state}")
         try:
             # update DataBase
             if chat_id in self.spectator_state_map.keys():
