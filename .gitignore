@@ -121,6 +121,7 @@ SQL_Queries.txt
 *.log
 logs/
 *out
+ics/
 
 
 # Spyder project settings

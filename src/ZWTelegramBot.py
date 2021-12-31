@@ -10,6 +10,8 @@ from logging.handlers import TimedRotatingFileHandler
 import mariadb
 import telepot
 import utility as util
+import ImportUtility as iUtil
+
 from DatabaseHandler import DatabaseHandler
 from PlayerState import PlayerState
 from SpectatorState import SpectatorState
@@ -121,6 +123,13 @@ class ZWTelegramBot(object):
         self.scheduler_handler = SchedulerHandler(api_config, self.bot, self.database_handler, _logger)
         # self.scheduler_handler.send_reminder_at_8am(self.send_reminders)
         # self.scheduler_handler.send_stats_to_group_chat(self.send_stats_to_group_chat)
+
+        # adding games manually via ics, to delete
+        # path = os.path.join('ics', 'someFile.ics')
+        # sql_statements = iUtil.parse_file(path)
+        # for sql_stat in sql_statements:
+        #     self.database_handler.execute_mysql_without_result(sql_stat, 0)
+
 
         # testing - TO DELETE
         # info = self.bot.sendMessage(self.maintainer_chat_id, 'testing custom keyboard',
