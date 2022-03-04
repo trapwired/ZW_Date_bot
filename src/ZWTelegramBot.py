@@ -174,6 +174,7 @@ class ZWTelegramBot(object):
         """
 
         content_type, chat_type, chat_id = telepot.glance(msg)
+        self.logger.info(msg)
         # private chat reply
         if chat_type == 'private':
             first_name, last_name = get_names(msg)

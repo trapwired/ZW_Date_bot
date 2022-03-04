@@ -238,7 +238,7 @@ def pretty_print_player_db(player_list):
 
 def pretty_print_player_states():
     res = f"Pretty printing player states:\n\n"
-    with open("PlayerState.py", "r") as f:
+    with open("src/PlayerState.py", "r") as f:
         for line in f:
             if line.startswith("    ") and not line.startswith("     "):
                 res += line
