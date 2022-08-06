@@ -283,7 +283,7 @@ class ZWTelegramBot(object):
                                 reply_text = self.get_reply_text('website', first_name)
                                 reply_keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
                                     text="handball.ch/Züri West 1",
-                                    url='https://www.handball.ch/de/matchcenter/teams/34393')]])
+                                    url='https://www.handball.ch/de/matchcenter/teams/35241')]])
                                 self.bot.sendMessage(chat_id, reply_text, reply_markup=reply_keyboard)
                                 return
                             else:
